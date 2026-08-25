@@ -81,8 +81,11 @@ def main() -> None:
             ans = input(
                 f"\n[자세 {pose + 1}] ID {ids} 관절을 최악 자세에 손으로 놓고 Enter (종료: q): "
             ).strip().lower()
-            if ans == "q":
+            if ans in ("q", "ㅂ"):  # ㅂ = 한글 IME 상태의 q
                 break
+            if ans:
+                print(f"'{ans}'는 무시합니다. 측정하려면 빈 Enter, 종료는 q.")
+                continue
             present = bus.sync_read("Present_Position", ids)
             bus.sync_write("Goal_Position", present)  # 토크 ON 시 점프 방지
             bus.enable_torque(ids)
@@ -104,7 +107,7 @@ def main() -> None:
                     print(f"     ID{i}: 측정 캡에 포화 — --hold-torque를 올려 다시 측정")
             pose += 1
     except KeyboardInterrupt:
-        print("\n중단.")
+        print(f"\n중단. (측정 중이던 자세 {pose + 1}은 집계에서 제외)")
     finally:
         bus.disable_torque(ids)
 
