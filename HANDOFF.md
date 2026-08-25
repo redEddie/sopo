@@ -73,3 +73,18 @@
 - 코드 주석·문서는 한국어, 식별자는 영어. 기존 스타일(argparse, sys.path 부트스트랩) 유지.
 - 하드웨어 테스트는 한 관절씩, 낮은 캡으로. 결과 수치는 TODO.md에 기록.
 - 커밋 메시지는 영어로 한 줄 요약 + 본문. 안전 기본값(torque_limit 300, overload 80/50/20) 임의 변경 금지.
+
+## 리뷰 1 (Claude, 2026-08-25) — joints.py / mirror.py 1차 구현에 대한 피드백
+
+**채택**: `SingleMotorJoint`, `DualMotorJoint`, `build_joints`, yaml `joints` 섹션, mirror.py 관절 단위 리팩터.
+안전 불변 규칙은 잘 지켜졌음.
+
+**반려 — `ContinuousJoint`와 J1 무제한 처리. 다음으로 대체할 것:**
+1. J1은 연속 회전 관절이 아니다. 기계적 범위가 0/4095 읽기 랩을 걸칠 뿐이므로 **HANDOFF 1번(Homing_Offset 센터링)** 을 구현해 J1의 범위 중앙이 2048로 읽히게 하고, J1을 `single` 타입으로 되돌린다.
+   - `05_find_limits.py`에 언랩(연속 읽기 델타가 ±2048 넘으면 ∓4096 보정) + `--center-homing` 추가. 관계: `Present = raw − Homing_Offset` (mod 4096). `new_offset = old_offset + (center − 2048)`를 −2047..2047로 정규화, `eprom_unlocked` 안에서 쓰기, 쓴 뒤 읽기값 검증. 이후 한계를 새 프레임으로 저장하고 `--write-eprom`.
+   - `ContinuousJoint`, `state_dir`, `*_state.yaml` 삭제. 이유: 토크 OFF 중 사람이 랩 너머로 돌리면 turn_count가 어긋나 재시작 시 논리각이 ±4096 틀어지고, 팔로워가 스토퍼를 향해 캡 토크로 계속 민다.
+   - `calibration.yaml`의 ID 1 항목은 센터링 후 05로 다시 측정해 기록 (지금은 삭제됨 → 기본 200~3896 적용).
+2. `DualMotorJoint`: 미러 모터도 읽어서 `ref + mirror`가 K ± 20틱 안인지 매 사이클 검사, 벗어나면 경고 후 정지(쌍이 싸우는 상태). 미러 목표도 자기 모터의 position_limits로 클램프. K는 yaml 상수 대신 05가 쌍 측정 시 `pos_a + pos_b` 중앙값을 calibration.yaml `pair_constants`에 기록하고 거기서 읽는다.
+3. 성능/원자성: Joint가 `goals(logical) -> {motor_id: tick}` 와 `motor_ids`만 제공하고, 루프에서 전 모터 `sync_read` 1회 → 관절 변환 → 클램프 → `sync_write` 1회. 쌍의 두 목표가 같은 패킷에 실린다.
+4. 오타: mirror.py "폴터"→"폴더", "낼어올"→"내려올"; arm.example.yaml "폭더"→"폴더". 예시의 `position_limits: {1: [0, 4095], ...}`는 삭제 (리밋 해제를 권장하는 모양이 됨).
+5. 위 수정 후 `python -m py_compile`, `--help`, 그리고 하드웨어 없이 `build_joints` + 클램프 로직 단위 테스트를 추가한 뒤 커밋. `cookbook/04_set_motor_id.py`와 README 변경도 같은 커밋에 포함.
