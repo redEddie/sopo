@@ -54,7 +54,7 @@ joint_velocity_limits.h, control_types.h}` (main, 2026-08). Desk/안전 PLC 쪽 
 | 13 | 불안정 감지 (`instability_detected`) | 없음 | 위치 오차 부호가 짧은 주기로 교대하면 게인/캡 문제로 정지 | 낮음 |
 | 14 | 데카르트 힘 임계값, 자기충돌 회피, 워크스페이스 영역 | 없음 (URDF 없음) | URDF + 자코비안 이후. 전까지는 관절 한계로 대체 | 후순위 |
 | 15 | RobotMode 상태 머신 + 래칭 에러 + `automaticErrorRecovery` | 없음 | `SopoRobot.mode ∈ {IDLE, MOVE, GUIDING(토크 OFF), REFLEX, STOPPED}`, 에러 래칭, `recover()` | 높음 |
-| 16 | 외부 활성화 장치 / 비상정지 (하드웨어) | 없음 | **소프트웨어로 대체 불가** — 서보 전원 라인에 물리 E-stop 스위치. 키보드 소프트 정지는 보조 수단 | **높음(하드웨어)** |
+| 16 | 외부 활성화 장치 / 비상정지 (하드웨어) | **없음 (Future work, TODO.md 참조)** | **소프트웨어로 대체 불가** — 서보 전원 라인에 물리 E-stop 스위치. 설치 전까지 캡 ≤ 300‰ + 전원 스위치 근접 배치로 대체. 키보드 소프트 정지는 보조 수단 | Future work |
 | 17 | Guiding(수동 안내) | 있음 — 토크 OFF 리더 모드 | 그대로 | 완료 |
 
 ## 3. Kimi 구현 순서 제안
