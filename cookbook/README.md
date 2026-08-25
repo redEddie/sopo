@@ -170,6 +170,15 @@ python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 15,16 --save
 
 주의: 정지 마찰이 부하 일부를 대신 버티므로 측정값은 실제 들어올리는 데 필요한 토크보다 작게 나온다 — 마진이 필요한 이유. 권장값은 `02_move_position.py --torque-limit <값>`으로 실제 들어올려지는지 검증한다.
 
+### 07_verify_torque.py — 토크 캡 검증 왕복 이동
+
+```bash
+python cookbook/07_verify_torque.py --port /dev/ttyACM0 --ids 19 --torque-limit 150
+python cookbook/07_verify_torque.py --port /dev/ttyACM0 --ids 15,16 --invert 16 --torque-limit 300 --delta 100
+```
+
+06에서 나온 권장 캡을 걸고 `--delta`(기본 200틱)만큼 왕복하며 도달 시간, 오차, 이동 중 max load/전류를 표로 낸다. max load가 캡의 85% 이상이면 "가속 여유 부족"으로 표시하니 캡을 올린다. 듀얼 관절은 반전 모터를 `--invert`로 지정해야 두 모터가 같은 방향으로 관절을 돌린다.
+
 ---
 
 ## 5. 트러블슈팅
