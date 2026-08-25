@@ -95,3 +95,12 @@
 3. 성능/원자성: Joint가 `goals(logical) -> {motor_id: tick}` 와 `motor_ids`만 제공하고, 루프에서 전 모터 `sync_read` 1회 → 관절 변환 → 클램프 → `sync_write` 1회. 쌍의 두 목표가 같은 패킷에 실린다.
 4. 오타: mirror.py "폴터"→"폴더", "낼어올"→"내려올"; arm.example.yaml "폭더"→"폴더". 예시의 `position_limits: {1: [0, 4095], ...}`는 삭제 (리밋 해제를 권장하는 모양이 됨).
 5. 위 수정 후 `python -m py_compile`, `--help`, 그리고 하드웨어 없이 `build_joints` + 클램프 로직 단위 테스트를 추가한 뒤 커밋. `cookbook/04_set_motor_id.py`와 README 변경도 같은 커밋에 포함.
+
+### 리뷰 1 처리 결과 (Claude가 직접 반영, 커밋 9f0c996)
+- 반영됨: ContinuousJoint 파일 상태 제거 + `range_ticks` 클램프 + **command()가 turn_count를 건드리던 이중 카운트 버그 수정**,
+  mirror.py 연속 관절 범위 클램프·시작 경고·오타, 08_move_joint 스텝 클램프(목표를 통째로 보내던 문제), yaml 예시.
+  단위 테스트(가짜 버스)로 랩 카운트·클램프·듀얼 매핑 검증함 — `tests/`로 옮겨 pytest화할 것.
+- **Kimi 몫으로 남음**: (a) DualMotorJoint가 미러 모터도 읽어 `ref + mirror ≈ K ± 20` 검사, 벗어나면 경고/정지;
+  (b) K를 05 실측(`pair_constants`)에서 읽기; (c) Joint가 `{id: tick}`을 반환하고 루프는 sync_read/sync_write 1회씩;
+  (d) HANDOFF 2~3번(남은 측정, 08_persist_caps), 5~6번(SopoRobot, reflex.py).
+- 규칙 추가: **토크를 켜는 모든 스크립트는 목표를 clamp_goal/스텝 클램프 없이 보내지 않는다** (08에서 위반 발견됨).

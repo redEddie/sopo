@@ -34,8 +34,8 @@
 
 ## 2. Robot API/SDK (Franka의 libfranka 포지션)
 
-- [ ] **관절 추상화**: 듀얼 모터 관절(J2/J3)을 관절 하나로 묶는 층 — 한쪽 반전 미러링,
-      두 모터에 상반된 목표를 줘서 서로 싸우지 않도록 강제
+- [x] **관절 추상화** 1차: `sopo/joints.py` (single / dual K−goal / 케이블 제한 continuous + range_ticks 클램프).
+      남음: 듀얼 쌍 K 일관성 검사, K 실측값 연동, sync_read/write 통합
 - [x] sm8512bl Return_Delay_Time 250 → 0 설정 (EPROM) — sync_read 실패 근본 원인이었음.
       apply_safety()가 이제 전 모터에 0을 강제해 재발 방지
 - [ ] `SopoRobot` 클래스: `connect() / get_observation() / send_action()` 경계 확립
