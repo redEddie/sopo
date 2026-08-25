@@ -51,8 +51,7 @@
 
 Franka Research 3의 안전 계층을 sopo 수준에서 재현:
 
-- [ ] **충돌 리플렉스**: Franka는 외란 토크가 임계값을 넘으면 반사 정지.
-      → sopo: `Present_Load`/`Present_Current` 상시 감시, 임계 초과 지속 시 정지 또는 후퇴(back-off)
+- [ ] **충돌 리플렉스** `sopo/reflex.py` — 스펙 확정: `docs/reflex-spec.md` (포화 300ms+오차 정체 → 홀드 래칭, recover 명시)
 - [ ] **명령 레이트 리미터**: Franka는 위치/속도/가속/저크 한계를 인터페이스에서 강제.
       → sopo: `clamp_goal`(위치·스텝)에 더해 속도/가속 프로파일 제한 추가
 - [ ] **접촉 vs 충돌 2단 임계값**: 낮은 임계(접촉 감지→감속)와 높은 임계(충돌→정지) 구분
