@@ -12,6 +12,27 @@ from dataclasses import dataclass, field
 
 from .bus import FeetechBus
 
+# Datasheet stall torque at 12V in kg.cm. Torque_Limit is per-mille of the
+# servo's maximum output, which equals this at standstill.
+#   sts3215: 12V variant (C018) = 30.0; the 7.4V variant (C001) is 19.5 - check the label
+MODEL_STALL_TORQUE_KGCM = {
+    "sts3215": 30.0,
+    "sts3250": 50.0,
+    "sm8512bl": 85.0,
+}
+CURRENT_UNIT_MA = 6.5  # Present_Current / Protection_Current register unit
+
+
+def torque_limit_from_kgcm(model: str, kgcm: float) -> int:
+    """kg.cm -> Torque_Limit per-mille for a given motor model (exact at stall)."""
+    stall = MODEL_STALL_TORQUE_KGCM[model]
+    return max(0, min(1000, round(kgcm / stall * 1000)))
+
+
+def torque_limit_to_kgcm(model: str, limit: int) -> float:
+    """Torque_Limit per-mille -> kg.cm upper bound (exact at stall, less while moving)."""
+    return MODEL_STALL_TORQUE_KGCM[model] * limit / 1000
+
 
 @dataclass
 class SafetyLimits:
@@ -39,6 +60,10 @@ class SafetyLimits:
     # Optional per-joint effort caps: motor_id -> per-mille. Measured with
     # cookbook/06_gravity_load.py so each joint gets just enough for its own weight.
     torque_limits: dict[int, int] = field(default_factory=dict)
+    # Optional absolute current trip in mA (Protection_Current, EPROM). Unlike
+    # Torque_Limit (a duty-cycle fraction) this is a physical quantity: the motor
+    # cuts output when current exceeds it for Over_Current_Protection_Time.
+    protection_current_ma: int | None = None
 
     def joint_range(self, motor_id: int) -> tuple[int, int]:
         return self.position_limits.get(motor_id, (self.min_position, self.max_position))
@@ -63,6 +88,8 @@ def apply_safety(bus: FeetechBus, motor_ids: list[int], limits: SafetyLimits) ->
             bus.write("Overload_Torque", motor_id, limits.overload_torque)
             bus.write("Protection_Time", motor_id, limits.protection_time)
             bus.write("Protective_Torque", motor_id, limits.protective_torque)
+            if limits.protection_current_ma is not None:
+                bus.write("Protection_Current", motor_id, round(limits.protection_current_ma / CURRENT_UNIT_MA))
         bus.write("Torque_Limit", motor_id, limits.torque_for(motor_id))
         bus.write("Acceleration", motor_id, limits.acceleration)
 

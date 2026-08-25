@@ -72,6 +72,23 @@ python examples/mirror.py --config configs/arm.yaml
 
 사람 옆에서 돌릴 때는 `torque_limit`을 400(40%) 이하로 유지할 것.
 
+### 토크 제한 단위
+
+`Torque_Limit`/`Max_Torque_Limit`은 **천분율(‰, 0~1000)** 이다. 150 = 15%. 모터에 토크 센서는 없고
+이 값은 PWM 출력 듀티의 상한이라, 정지 상태에서는 스톨 토크 × 비율이 곧 최대 토크이고
+움직일 때는 역기전력 때문에 그보다 작다(= 보수적인 상한).
+
+| 모델 | 스톨 토크 @12V | 150‰일 때 |
+|---|---|---|
+| sts3215 (12V, C018) | 30 kg·cm (7.4V C001 버전은 19.5) | 4.5 kg·cm |
+| sts3250 | 50 kg·cm | 7.5 kg·cm |
+| sm8512bl | 85 kg·cm | 12.8 kg·cm |
+
+절대 단위로 지정하려면 `torque_limit_from_kgcm("sts3250", 7.5)` → 150 처럼 변환하고, 진짜 물리량으로
+자르려면 `SafetyLimits(protection_current_ma=...)`로 `Protection_Current`(6.5mA 단위)를 설정한다.
+기어 효율까지 포함한 정확한 값이 필요하면 아는 무게를 아는 레버에 매달고 `Present_Load`를 읽어 관절별로
+한 번 보정한다.
+
 ## 라이선스
 
 Apache-2.0. 레지스터 테이블은 lerobot(Apache-2.0)에서 가져와 수정했다.
