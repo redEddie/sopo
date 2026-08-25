@@ -1,0 +1,19 @@
+[project]
+name = "sopo"
+version = "0.1.0"
+description = "Controller for a custom mid-size Feetech-based robot arm (HopeJr-derived), with torque-limited safe operation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "feetech-servo-sdk>=1.0.0,<2.0.0",
+    "pyserial>=3.5",
+    "pyyaml>=6.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["sopo"]

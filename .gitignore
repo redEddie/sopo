@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 실제 암 설정(포트, 캘리브레이션 값 포함)은 커밋하지 않음
+configs/arm.yaml
+calibration/
