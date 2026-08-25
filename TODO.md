@@ -47,6 +47,8 @@
 
 ## 3. Franka 안전장치 벤치마킹
 
+**상세 대응표: [`docs/franka-safety.md`](docs/franka-safety.md)** (libfranka 헤더 기준 17개 항목, 우선순위 포함)
+
 Franka Research 3의 안전 계층을 sopo 수준에서 재현:
 
 - [ ] **충돌 리플렉스**: Franka는 외란 토크가 임계값을 넘으면 반사 정지.
