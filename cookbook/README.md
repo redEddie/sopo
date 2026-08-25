@@ -211,13 +211,21 @@ python cookbook/09_continuous_angle.py --port /dev/ttyACM0 --id 1
 
 ### 포트 권한
 
-`/dev/ttyACM0` 열기에 실패하면 사용자를 `dialout` 그룹에 추가한다.
+`Permission denied: '/dev/ttyACM0'`이 뜨면 두 가지를 한 번만 해두면 영구 해결된다.
 
 ```bash
+# 1) dialout 그룹 가입 (재로그인 후 적용; 당장 쓰려면 newgrp dialout)
 sudo usermod -aG dialout $USER
+
+# 2) udev 규칙: 꽂을 때마다 자동 권한 + 시리얼별 고정 이름 /dev/sopo_follower
+sudo cp configs/99-sopo.rules /etc/udev/rules.d/
+sudo udevadm control --reload-rules && sudo udevadm trigger
+ls -l /dev/sopo_follower /dev/ttyACM*     # crw-rw-rw- 와 심볼릭 링크 확인
 ```
 
-로그아웃 후 다시 로그인하거나 `newgrp dialout`을 실행한다.
+임시 조치는 `sudo chmod 666 /dev/ttyACM0` (재연결 전까지만 유효). 규칙 파일의 시리얼 번호는
+`udevadm info -a -n /dev/ttyACM0 | grep serial`로 확인한다. 리더 암 어댑터를 추가하면 같은 방식으로
+`SYMLINK+="sopo_leader"` 줄을 추가하고 yaml의 port를 `/dev/sopo_leader`로 쓴다.
 
 ### sync_read가 "There is no status packet!"으로 실패
 
