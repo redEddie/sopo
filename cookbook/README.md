@@ -90,6 +90,7 @@
 - 메인 루프는 `try/finally`로 감싸고, 종료 시 토크를 끈다.
 - 위치 명령은 현재 위치를 먼저 읽고 `clamp_goal()`으로 한 번에 움직일 거리를 제한한다.
 - 사람 손가락이 관절 사이에 들어가지 않도록 주의한다.
+- 관절별 위치 한계와 토크 캡은 `05_find_limits.py`/`06_gravity_load.py`로 실측해 `configs/calibration.yaml`에 기록한다. `examples/mirror.py`는 이 파일이 있으면 자동으로 적용한다.
 
 ---
 
@@ -148,6 +149,26 @@ python cookbook/04_setup_motor.py --port /dev/ttyACM0 --current-id 1 --new-id 2 
 ```
 
 버스에 모터가 정확히 1개만 연결되어 있어야 하며, 여러 모터가 있으면 거부한다. 현재 보드레이트가 1M이 아니면 `--baud`로 지정한다. ID/Baud_Rate는 쓰는 즉시 적용되므로 스크립트가 잠금 해제 → 보드레이트 변경(재접속) → ID 변경 → 새 ID로 재잠금 순서를 지키며, 변경 후 `ping`으로 검증한다.
+
+### 05_find_limits.py — 관절 최소/최대 위치 기록 (손으로)
+
+```bash
+python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 19
+python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 15,16 --write-eprom
+```
+
+토크를 끄고 관절을 손으로 양끝까지 움직이면 min/max를 실시간으로 기록한다. `Ctrl+C`로 끝내면 안쪽으로 `--margin`(기본 50틱)을 줄인 값을 `configs/calibration.yaml`의 `position_limits`에 저장한다. `--write-eprom`을 주면 모터의 `Min/Max_Position_Limit`(EPROM)에도 써서 펌웨어가 범위 밖 목표를 거부하게 만든다(소프트웨어 버그에 대한 2차 방어선). 듀얼 모터 관절은 두 ID를 함께 지정한다. 0/4095 랩 지점 근처면 경고한다.
+
+### 06_gravity_load.py — 자중 토크 측정
+
+```bash
+python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 19
+python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 15,16 --save
+```
+
+`Present_Load`는 모터 출력 듀티(‰)이므로, 정지 자세를 유지할 때의 값이 곧 중력을 버티는 토크 비율이다. 토크를 끈 상태에서 관절을 **최악 자세**(레버 수평, 아래 링크 완전 신전)에 손으로 놓고 Enter → 현재 위치를 목표로 잡고 토크 ON(`--hold-torque`, 기본 600) → `--seconds` 동안 부하/전류/처짐 측정 → 토크 OFF. 자세를 바꿔 반복 측정할 수 있고, 최댓값 × `--margin`(기본 1.5)을 권장 `Torque_Limit`으로 출력한다. `--save`로 `calibration.yaml`의 `torque_limits`에 기록한다.
+
+주의: 정지 마찰이 부하 일부를 대신 버티므로 측정값은 실제 들어올리는 데 필요한 토크보다 작게 나온다 — 마진이 필요한 이유. 권장값은 `02_move_position.py --torque-limit <값>`으로 실제 들어올려지는지 검증한다.
 
 ---
 

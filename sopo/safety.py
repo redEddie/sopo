@@ -36,9 +36,15 @@ class SafetyLimits:
 
     # Optional per-joint overrides: motor_id -> (min_position, max_position)
     position_limits: dict[int, tuple[int, int]] = field(default_factory=dict)
+    # Optional per-joint effort caps: motor_id -> per-mille. Measured with
+    # cookbook/06_gravity_load.py so each joint gets just enough for its own weight.
+    torque_limits: dict[int, int] = field(default_factory=dict)
 
     def joint_range(self, motor_id: int) -> tuple[int, int]:
         return self.position_limits.get(motor_id, (self.min_position, self.max_position))
+
+    def torque_for(self, motor_id: int) -> int:
+        return self.torque_limits.get(motor_id, self.torque_limit)
 
 
 def apply_safety(bus: FeetechBus, motor_ids: list[int], limits: SafetyLimits) -> None:
@@ -57,7 +63,7 @@ def apply_safety(bus: FeetechBus, motor_ids: list[int], limits: SafetyLimits) ->
             bus.write("Overload_Torque", motor_id, limits.overload_torque)
             bus.write("Protection_Time", motor_id, limits.protection_time)
             bus.write("Protective_Torque", motor_id, limits.protective_torque)
-        bus.write("Torque_Limit", motor_id, limits.torque_limit)
+        bus.write("Torque_Limit", motor_id, limits.torque_for(motor_id))
         bus.write("Acceleration", motor_id, limits.acceleration)
 
 

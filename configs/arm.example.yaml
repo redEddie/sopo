@@ -27,7 +27,13 @@ safety:
   max_position: 3896
   # 관절별 소프트 리밋 오버라이드 (팔로워 ID: [min, max])
   position_limits: {}
+  # 관절별 토크 캡 오버라이드 (팔로워 ID: 천분율)
+  torque_limits: {}
   # 예시:
-  #   1: [500, 3500]
+  #   position_limits: {1: [500, 3500]}
+  #   torque_limits: {1: 450, 21: 150}
+
+# 실측값은 configs/calibration.yaml에 따로 저장된다 (05_find_limits.py / 06_gravity_load.py).
+# mirror.py는 이 파일이 같은 폴더에 있으면 위 safety 값 위에 덮어씌워 적용한다.
 
 rate_hz: 50

@@ -29,11 +29,13 @@ sopo/            핵심 패키지
   registers.py     STS/SMS 컨트롤 테이블 + sign-magnitude 인코딩
   bus.py           FeetechBus: ping/scan/read/write/sync_read/sync_write/torque
   safety.py        SafetyLimits + 토크 제한/과부하 보호/소프트 리밋/스텝 클램핑
-cookbook/        Feetech 기초 조작 쿡북 (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정)
+cookbook/        Feetech 기초 조작 쿡북 — README.md 참조
+                   (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정 → 위치 한계 실측 → 자중 토크 실측)
 examples/
   mirror.py        리더-팔로워 미러 텔레오퍼레이션
 configs/
   arm.example.yaml 암 정의(포트/ID/안전 제한) 예시
+  calibration.yaml 실측 관절 한계/토크 캡 (05/06 스크립트가 생성, mirror.py가 자동 적용)
 ```
 
 ## 빠른 시작
@@ -48,7 +50,11 @@ python cookbook/01_read_state.py --port /dev/ttyACM0 --ids 1,2,3,4,5,6,7
 # 3. 토크 제한 걸고 한 관절 이동
 python cookbook/02_move_position.py --port /dev/ttyACM0 --id 1 --goal 2048
 
-# 4. 미러 텔레오퍼레이션
+# 4. 관절별 위치 한계·자중 토크 실측 (손으로 움직여 기록)
+python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 19
+python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 19 --save
+
+# 5. 미러 텔레오퍼레이션
 cp configs/arm.example.yaml configs/arm.yaml   # 포트/ID 수정
 python examples/mirror.py --config configs/arm.yaml
 ```

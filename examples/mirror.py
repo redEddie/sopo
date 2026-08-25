@@ -37,6 +37,16 @@ def load_config(path: str) -> dict:
     n_leader, n_follower = len(cfg["leader"]["ids"]), len(cfg["follower"]["ids"])
     if n_leader != n_follower:
         raise ValueError(f"leader ids ({n_leader}) and follower ids ({n_follower}) must match 1:1")
+
+    # 실측 캘리브레이션(05_find_limits / 06_gravity_load 결과)이 같은 폴더에 있으면 덮어씌운다.
+    calib_path = Path(path).parent / "calibration.yaml"
+    if calib_path.exists():
+        calib = yaml.safe_load(calib_path.read_text()) or {}
+        safety = cfg.setdefault("safety", {})
+        for key in ("position_limits", "torque_limits"):
+            if key in calib:
+                safety.setdefault(key, {}).update(calib[key])
+        print(f"캘리브레이션 적용: {calib_path}")
     return cfg
 
 
@@ -48,7 +58,8 @@ def make_limits(cfg: dict) -> SafetyLimits:
         max_relative_target=s.get("max_relative_target", 80),
         min_position=s.get("min_position", 200),
         max_position=s.get("max_position", 3896),
-        position_limits={int(k): tuple(v) for k, v in s.get("position_limits", {}).items()},
+        position_limits={int(k): tuple(v) for k, v in (s.get("position_limits") or {}).items()},
+        torque_limits={int(k): int(v) for k, v in (s.get("torque_limits") or {}).items()},
     )
 
 
@@ -138,7 +149,8 @@ def main() -> None:
         # 팔로워는 토크를 켜기 전에 반드시 안전 제한부터 적용
         apply_safety(follower, follower_ids, limits)
         follower.enable_torque(follower_ids)
-        print(f"팔로워 토크 제한: {limits.torque_limit / 10:.0f}% / 스텝 제한: {limits.max_relative_target} ticks")
+        caps = ", ".join(f"{i}:{limits.torque_for(i) / 10:.0f}%" for i in follower_ids)
+        print(f"팔로워 토크 제한: {caps} / 스텝 제한: {limits.max_relative_target} ticks")
 
         soft_start(leader, follower, cfg, limits)
         mirror_loop(leader, follower, cfg, limits)
