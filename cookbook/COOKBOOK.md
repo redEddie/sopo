@@ -163,6 +163,17 @@ sudo usermod -aG dialout $USER
 
 로그아웃 후 다시 로그인하거나 `newgrp dialout`을 실행한다.
 
+### sync_read가 "There is no status packet!"으로 실패
+
+개별 `read`는 되는데 `sync_read`만 실패하고, 특정 모터가 리스트 **마지막에 있을 때만 성공**한다면 그 모터의 `Return_Delay_Time`(주소 7)을 확인한다. 이 값이 0이 아니면(일부 모델은 출하값 250 = 500µs) 해당 모터의 응답이 지연되면서 sync read 응답 체인에서 자기 뒤 모터들의 응답과 충돌한다. 해결:
+
+```python
+with bus.eprom_unlocked(motor_id):
+    bus.write("Return_Delay_Time", motor_id, 0)
+```
+
+`apply_safety()`는 이 설정을 자동으로 적용한다. (실사례: sm8512bl 출하값 250 때문에 7모터 sync_read가 전멸 — 0으로 바꾸자 전 조합 성공)
+
 ### 모터 무응답
 
 - 전원이 켜져 있는지, GND가 공통 접지되어 있는지 확인한다.

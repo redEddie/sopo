@@ -4,7 +4,7 @@
 
 | 관절 | 모터 ID | 모델 | 비고 |
 |---|---|---|---|
-| J1 | 1 | sm8512bl | **sync_read 불가 → 개별 read** (lerobot hopejr과 동일), Return_Delay_Time=250(→0으로 변경 예정) |
+| J1 | 1 | sm8512bl | 출하값 Return_Delay_Time=250이 sync_read 응답 체인을 깨뜨렸음 → 0으로 설정해 해결(EPROM, 영구). 이제 sync_read 정상 |
 | J2 | 10, 11 | sts3250 ×2 | 듀얼, 반전 장착 (위치 합 ≈ 4095) |
 | J3 | 15, 16 | sts3250 ×2 | 듀얼, 반전 장착 (위치 합 ≈ 4095) |
 | J4 | 19 | sts3250 | |
@@ -27,8 +27,9 @@
 ## 2. Robot API/SDK (Franka의 libfranka 포지션)
 
 - [ ] **관절 추상화**: 듀얼 모터 관절(J2/J3)을 관절 하나로 묶는 층 — 한쪽 반전 미러링,
-      두 모터에 상반된 목표를 줘서 서로 싸우지 않도록 강제. sm8512bl 개별 read 쿼크도 여기서 흡수
-- [ ] sm8512bl Return_Delay_Time 250 → 0 설정 (EPROM)
+      두 모터에 상반된 목표를 줘서 서로 싸우지 않도록 강제
+- [x] sm8512bl Return_Delay_Time 250 → 0 설정 (EPROM) — sync_read 실패 근본 원인이었음.
+      apply_safety()가 이제 전 모터에 0을 강제해 재발 방지
 - [ ] `SopoRobot` 클래스: `connect() / get_observation() / send_action()` 경계 확립
 - [ ] 캘리브레이션 층: homing offset + 관절 범위 실측 → 틱 ↔ 정규화 좌표([-1,1] 또는 rad) 변환
 - [ ] 명령 보간: 정책 10~30Hz → 버스 50~100Hz 스무딩 (Franka의 1kHz 보간에 대응)

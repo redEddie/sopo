@@ -50,6 +50,10 @@ def apply_safety(bus: FeetechBus, motor_ids: list[int], limits: SafetyLimits) ->
     """
     for motor_id in motor_ids:
         with bus.eprom_unlocked(motor_id):
+            # Return_Delay_Time > 0 desynchronizes the sync-read response chain:
+            # a delayed reply corrupts every reply after it in the group
+            # (observed on sm8512bl shipping with 250 = 500us; sts32xx ship with 0).
+            bus.write("Return_Delay_Time", motor_id, 0)
             bus.write("Overload_Torque", motor_id, limits.overload_torque)
             bus.write("Protection_Time", motor_id, limits.protection_time)
             bus.write("Protective_Torque", motor_id, limits.protective_torque)
