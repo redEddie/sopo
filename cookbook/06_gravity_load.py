@@ -121,6 +121,12 @@ def main() -> None:
         value = math.ceil(overall[i] * args.margin / 10) * 10
         rec[i] = min(1000, max(args.floor, value))
         print(f"ID{i}: 측정 최대 {overall[i]}‰ -> 권장 {rec[i]}‰ ({rec[i] / 10:.0f}%)")
+    if len(ids) > 1:
+        # 함께 측정한 모터들은 한 관절을 나눠 지는 듀얼 쌍이다. 부하 분담은 자세와
+        # 각 모터의 위치 오차에 따라 뒤바뀌므로 캡은 쌍에 동일하게(최댓값) 준다.
+        shared = max(rec.values())
+        rec = dict.fromkeys(ids, shared)
+        print(f"듀얼 쌍 공통 권장: {shared}‰ (분담이 뒤바뀔 수 있어 최댓값으로 통일)")
     print("검증: python cookbook/02_move_position.py --id <ID> --goal <목표> --torque-limit <권장값>")
 
     if args.save:
