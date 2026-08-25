@@ -79,11 +79,18 @@
 **채택**: `SingleMotorJoint`, `DualMotorJoint`, `build_joints`, yaml `joints` 섹션, mirror.py 관절 단위 리팩터.
 안전 불변 규칙은 잘 지켜졌음.
 
-**반려 — `ContinuousJoint`와 J1 무제한 처리. 다음으로 대체할 것:**
-1. J1은 연속 회전 관절이 아니다. 기계적 범위가 0/4095 읽기 랩을 걸칠 뿐이므로 **HANDOFF 1번(Homing_Offset 센터링)** 을 구현해 J1의 범위 중앙이 2048로 읽히게 하고, J1을 `single` 타입으로 되돌린다.
-   - `05_find_limits.py`에 언랩(연속 읽기 델타가 ±2048 넘으면 ∓4096 보정) + `--center-homing` 추가. 관계: `Present = raw − Homing_Offset` (mod 4096). `new_offset = old_offset + (center − 2048)`를 −2047..2047로 정규화, `eprom_unlocked` 안에서 쓰기, 쓴 뒤 읽기값 검증. 이후 한계를 새 프레임으로 저장하고 `--write-eprom`.
-   - `ContinuousJoint`, `state_dir`, `*_state.yaml` 삭제. 이유: 토크 OFF 중 사람이 랩 너머로 돌리면 turn_count가 어긋나 재시작 시 논리각이 ±4096 틀어지고, 팔로워가 스토퍼를 향해 캡 토크로 계속 민다.
-   - `calibration.yaml`의 ID 1 항목은 센터링 후 05로 다시 측정해 기록 (지금은 삭제됨 → 기본 200~3896 적용).
+**정정(Claude): J1은 기계적 스토퍼가 없고 케이블이 회전을 제한하는 관절이며 범위가 360°를 넘을 수 있다.
+따라서 `ContinuousJoint`(소프트웨어 언랩)는 올바른 접근이다. HANDOFF 1번의 Homing_Offset 센터링은 J1에 적용하지 않는다.**
+단, 아래 두 가지를 반영할 것 (단순하게, 리플렉스 아님):
+1. **논리각 범위 클램프 추가.** J1 목표를 `home ± range_ticks`(yaml `range_ticks`, 기본 2600 ≈ ±228°, 총 456°)로
+   잘라낸다. 에러/정지/토크 해제 없이 목표만 클램프 — "360°를 좀 넘어도 reflex가 나지 않는" 요구사항 그대로.
+   `clamp_joint_goal`에서 continuous 관절도 이 범위로 클램프한다. 나중에 reflex.py를 만들 때 이 클램프는 오류로 취급하지 않는다.
+   - `home`은 프로그램 시작 시 첫 읽기값(turn_count=0). 운용 규칙: **케이블이 풀린 자세에서 프로그램을 시작한다** (mirror.py 시작 메시지로 안내).
+   - 리더와 팔로워 J1 모두 같은 규칙. 리더 J1이 범위를 넘으면 팔로워는 경계에 머문다.
+2. **turn_count 파일 저장(`state_path`, `*_state.yaml`, `state_dir`) 제거.** 토크 OFF 중 사람이 랩 너머로 돌리면 파일 값이 어긋나
+   범위 클램프가 엉뚱한 곳에서 걸린다. 메모리에서만 세고 시작 시 0. `MAX_SINGLE_MOVE=4095`는 의미가 없으니 삭제(스텝 클램프가 이미 막는다).
+   - 참고(나중에 시험): sm8512bl은 Phase bit4를 켜면 펌웨어가 멀티턴 위치를 직접 추적한다(전원 켜진 동안). 소프트웨어 언랩 대신 쓸 수 있는지, Goal_Position이 4095 초과 값을 받는지 확인 후 결정. 지금은 소프트웨어 언랩 유지.
+   - `calibration.yaml`의 ID 1 position_limits는 사용하지 않는다(삭제됨). J1 한계는 yaml `range_ticks`로만.
 2. `DualMotorJoint`: 미러 모터도 읽어서 `ref + mirror`가 K ± 20틱 안인지 매 사이클 검사, 벗어나면 경고 후 정지(쌍이 싸우는 상태). 미러 목표도 자기 모터의 position_limits로 클램프. K는 yaml 상수 대신 05가 쌍 측정 시 `pos_a + pos_b` 중앙값을 calibration.yaml `pair_constants`에 기록하고 거기서 읽는다.
 3. 성능/원자성: Joint가 `goals(logical) -> {motor_id: tick}` 와 `motor_ids`만 제공하고, 루프에서 전 모터 `sync_read` 1회 → 관절 변환 → 클램프 → `sync_write` 1회. 쌍의 두 목표가 같은 패킷에 실린다.
 4. 오타: mirror.py "폴터"→"폴더", "낼어올"→"내려올"; arm.example.yaml "폭더"→"폴더". 예시의 `position_limits: {1: [0, 4095], ...}`는 삭제 (리밋 해제를 권장하는 모양이 됨).
