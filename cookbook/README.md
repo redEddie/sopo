@@ -141,7 +141,17 @@ python cookbook/03_torque_limits.py --port /dev/ttyACM0 --id 1
 
 낮은 토크 한계로 현재 위치를 유지하면서 부하/전류를 출력한다. 관절을 손으로 밀면 수치가 포화되는 것을 확인할 수 있다. `--persist`를 주면 EPROM에 영구 저장하며, `yes` 입력을 요구한다.
 
-### 04_setup_motor.py — ID/보드레이트 변경
+### 04_set_motor_id.py — 모터 ID 변경
+
+```bash
+python cookbook/04_set_motor_id.py --port /dev/ttyACM0 --current-id 1 --new-id 2
+```
+
+현재 ID를 아는 모터의 ID만 바꾼다. ID는 EPROM에 있어 쓰기 전 `Lock`을 해제해야 하고, 쓰는 즉시 적용되므로 이후 통신은 새 ID로 한다. 잠금 해제 → ID 쓰기 → 새 ID로 재잠금 → `ping` 검증 순서를 따른다.
+
+보드레이트까지 같이 바꾸거나 버스에 모터가 딱 1개만 붙어 있어야 안심되는 상황이라면 아래 `04_setup_motor.py`를 사용한다.
+
+### 04_setup_motor.py — ID/보드레이트 변경 (버스에 모터 1개)
 
 ```bash
 python cookbook/04_setup_motor.py --port /dev/ttyACM0 --new-id 2
@@ -178,6 +188,22 @@ python cookbook/07_verify_torque.py --port /dev/ttyACM0 --ids 15,16 --invert 16 
 ```
 
 06에서 나온 권장 캡을 걸고 `--delta`(기본 200틱)만큼 왕복하며 도달 시간, 오차, 이동 중 max load/전류를 표로 낸다. max load가 캡의 85% 이상이면 "가속 여유 부족"으로 표시하니 캡을 올린다. 듀얼 관절은 반전 모터를 `--invert`로 지정해야 두 모터가 같은 방향으로 관절을 돌린다.
+
+### 08_move_joint.py — 관절 단위 이동 (듀얼 쌍 동작 확인)
+
+```bash
+python cookbook/08_move_joint.py --config configs/arm.yaml --joint J2 --goal 2000
+```
+
+설정의 `joints` 정의로 관절 하나를 안전하게 이동시킨다. 리더 암 없이 듀얼 모터 관절(J2/J3)이 `K - goal` 관계로 함께 움직이는지 확인할 때 쓴다.
+
+### 09_continuous_angle.py — 연속 관절(J1) 허용 범위 정하기
+
+```bash
+python cookbook/09_continuous_angle.py --port /dev/ttyACM0 --id 1
+```
+
+전선이 풀린 자세에서 실행하면 그 자세를 0°로 잡고, 손으로 돌리는 동안 랩(4095→0)을 자동 처리한 연속 각도를 표시한다. 전선이 당기기 시작하는 각도를 양쪽에서 읽어 `joints` 설정의 `range_ticks`로 넣는다.
 
 ---
 

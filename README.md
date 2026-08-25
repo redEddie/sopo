@@ -50,11 +50,14 @@ python cookbook/01_read_state.py --port /dev/ttyACM0 --ids 1,2,3,4,5,6,7
 # 3. 토크 제한 걸고 한 관절 이동
 python cookbook/02_move_position.py --port /dev/ttyACM0 --id 1 --goal 2048
 
-# 4. 관절별 위치 한계·자중 토크 실측 (손으로 움직여 기록)
+# 4. (필요시) 모터 ID 변경
+python cookbook/04_set_motor_id.py --port /dev/ttyACM0 --current-id 1 --new-id 2
+
+# 5. 관절별 위치 한계·자중 토크 실측 (손으로 움직여 기록)
 python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 19
 python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 19 --save
 
-# 5. 미러 텔레오퍼레이션
+# 6. 미러 텔레오퍼레이션
 cp configs/arm.example.yaml configs/arm.yaml   # 포트/ID 수정
 python examples/mirror.py --config configs/arm.yaml
 ```

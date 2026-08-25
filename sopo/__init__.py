@@ -1,6 +1,13 @@
 """sopo: controller for our mid-size Feetech-based arm (hopejr-derived)."""
 
 from .bus import FeetechBus
+from .joints import (
+    ContinuousJoint,
+    DualMotorJoint,
+    Joint,
+    SingleMotorJoint,
+    build_joints,
+)
 from .safety import (
     MODEL_STALL_TORQUE_KGCM,
     SafetyLimits,
@@ -14,6 +21,11 @@ from .safety import (
 
 __all__ = [
     "FeetechBus",
+    "Joint",
+    "SingleMotorJoint",
+    "DualMotorJoint",
+    "ContinuousJoint",
+    "build_joints",
     "SafetyLimits",
     "apply_safety",
     "clamp_goal",
