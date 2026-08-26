@@ -38,6 +38,7 @@
 - 관절별 한계/토크 캡은 calibration.yaml에서. 듀얼 쌍은 두 모터 캡 동일.
 
 ### 5. Robot API — `sopo/robot.py` `SopoRobot`
+**전체 구조는 `docs/architecture.md`를 따른다 (데몬 `sopod` + IPC + 클라이언트). SopoRobot은 클라이언트 위에 올린다.**
 - `connect(calibrate=True) / get_observation() / send_action(action) / disconnect()`. lerobot `Robot` 인터페이스 형태.
 - 내부: sync_read → 관절 변환 → `clamp_goal` → sync_write. 정규화: 틱 ↔ [-1, 1] (관절 한계 기준).
 - 정책 워치독: send_action이 일정 시간 안 오면 현재 자세 홀드 후 토크 해제.

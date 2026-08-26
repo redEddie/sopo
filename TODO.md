@@ -34,6 +34,8 @@
 
 ## 2. Robot API/SDK (Franka의 libfranka 포지션)
 
+**목표 구조와 계층: [`docs/architecture.md`](docs/architecture.md)** — 버스는 `sopod` 데몬만, 상태 PUB/명령 REP로 프로세스 분리, GUI는 구독자
+
 - [x] **관절 추상화** 1차: `sopo/joints.py` (single / dual K−goal / 케이블 제한 continuous + range_ticks 클램프).
       남음: 듀얼 쌍 K 일관성 검사, K 실측값 연동, sync_read/write 통합
 - [x] sm8512bl Return_Delay_Time 250 → 0 설정 (EPROM) — sync_read 실패 근본 원인이었음.
