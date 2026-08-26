@@ -33,14 +33,15 @@ from sopo import (
     ContinuousJoint,
     DualMotorJoint,
     FeetechBus,
+    Mode,
+    Reflex,
+    ReflexConfig,
     SafetyLimits,
     SingleMotorJoint,
     apply_safety,
 )
 
-MAX_COMM_ERRORS = 5
 ARRIVAL_TICKS = 30  # 소프트스타트 수렴 판정 임계값
-TEMP_WARN_C = 65
 TICKS_PER_REV = 4096
 
 
@@ -78,6 +79,33 @@ def build_arm_joints(cfg: dict, arm_name: str):
         else:
             raise ValueError(f"알 수 없는 관절 타입: {jtype}")
     return joints
+
+
+def build_pairs(cfg: dict) -> dict[str, tuple[int, int, int]]:
+    pairs: dict[str, tuple[int, int, int]] = {}
+    for jcfg in cfg.get("joints", []):
+        if jcfg.get("type") == "dual":
+            ref = jcfg["reference_id"]
+            ids = tuple(jcfg["ids"])
+            mirror = ids[1] if ids[0] == ref else ids[0]
+            pairs[jcfg["name"]] = (ref, mirror, jcfg["K"])
+    return pairs
+
+
+def joint_motor_goals(joints, joint_goals: dict[str, int]) -> dict[int, int]:
+    """Convert logical joint goals to per-motor goals for reflex comparison."""
+    motor_goals: dict[int, int] = {}
+    for j in joints:
+        goal = joint_goals[j.name]
+        if isinstance(j, DualMotorJoint):
+            motor_goals[j.reference_id] = goal
+            motor_goals[j.mirror_id] = max(0, min(TICKS_PER_REV - 1, j.K - goal))
+        elif isinstance(j, ContinuousJoint):
+            # Reflex compares in the logical (unwrapped) frame.
+            motor_goals[j.motor_id] = goal
+        else:
+            motor_goals[j.motor_id] = goal
+    return motor_goals
 
 
 def make_limits(cfg: dict) -> SafetyLimits:
@@ -215,6 +243,41 @@ def soft_start(
     )
 
 
+def wait_reflex_recover(
+    reflex: Reflex,
+    follower_joints,
+    follower_pos: dict[str, int],
+    follower_load: dict[int, int],
+) -> None:
+    """Block for user input while in REFLEX; 'r' tries recover, 'q' aborts."""
+
+    def _motor_present() -> dict[int, int]:
+        out: dict[int, int] = {}
+        for j in follower_joints:
+            pos = follower_pos[j.name]
+            if isinstance(j, DualMotorJoint):
+                out[j.reference_id] = pos
+            elif isinstance(j, ContinuousJoint):
+                out[j.motor_id] = pos
+            else:
+                out[j.motor_id] = pos
+        return out
+
+    while reflex.mode is Mode.REFLEX:
+        try:
+            key = input("리플렉스 발동. [r] 복구 시도, [q] 종료: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            raise RuntimeError("사용자가 리플렉스 상태에서 종료했습니다.")
+        if key == "q":
+            raise RuntimeError("사용자가 리플렉스 상태에서 종료했습니다.")
+        if key == "r":
+            ok, reason = reflex.recover(_motor_present(), follower_load)
+            if ok:
+                print("복구 성공. 미러링 재개.")
+                return
+            print(f"복구 불가: {reason}")
+
+
 def mirror_loop(
     leader: FeetechBus,
     follower: FeetechBus,
@@ -223,29 +286,56 @@ def mirror_loop(
     cfg: dict,
     limits: SafetyLimits,
     joint_limits: dict[str, tuple[int, int]],
+    reflex: Reflex,
     verbose: bool = False,
     verbose_interval: float = 0.5,
 ) -> None:
     period = 1.0 / cfg.get("rate_hz", 50)
     follower_motor_ids = [mid for j in follower_joints for mid in j.motor_ids]
     continuous = continuous_joints(follower_joints)
-    comm_errors = 0
     last_temp_check = 0.0
     last_verbose = 0.0
+
+    follower_load: dict[int, int] = {}
+    goal: dict[str, int] = {}
+    present_raw: dict[int, int] = {}
     while True:
         cycle_start = time.monotonic()
+        comm_ok = True
         try:
             leader_pos = read_all_joints(leader, leader_joints)
             follower_pos = read_all_joints(follower, follower_joints)
+            follower_load = follower.sync_read("Present_Load", follower_motor_ids)
             target = map_leader_to_follower(leader_pos, cfg, follower_joints)
             goal = clamp_joint_goal(target, follower_pos, joint_limits, limits.max_relative_target, continuous)
             command_all_joints(follower, follower_joints, goal)
-            comm_errors = 0
+            # Reflex needs both reference and mirror positions for pair checks.
+            present_raw = follower.sync_read("Present_Position", follower_motor_ids)
         except ConnectionError as e:
-            comm_errors += 1
-            print(f"통신 오류 ({comm_errors}/{MAX_COMM_ERRORS}): {e}", file=sys.stderr)
-            if comm_errors >= MAX_COMM_ERRORS:
-                raise RuntimeError("통신 오류가 연속으로 발생하여 안전을 위해 중단합니다.") from e
+            comm_ok = False
+            print(f"통신 오류: {e}", file=sys.stderr)
+
+        motor_goal = joint_motor_goals(follower_joints, goal)
+        trips = reflex.update(cycle_start, present_raw, motor_goal, follower_load, comm_ok=comm_ok)
+        for trip in trips:
+            print(f"[!] {trip.event.value}: {trip.detail}", file=sys.stderr)
+
+        if reflex.mode is Mode.STOPPED:
+            raise RuntimeError("STOPPED: 안전을 위해 중단합니다.")
+
+        if reflex.mode is Mode.REFLEX:
+            hold = reflex.hold_targets(present_raw)
+            # Convert per-motor hold to joint goals so ContinuousJoint unwraps correctly.
+            hold_joint_goals: dict[str, int] = {}
+            for j in follower_joints:
+                if isinstance(j, DualMotorJoint):
+                    hold_joint_goals[j.name] = hold[j.reference_id]
+                else:
+                    hold_joint_goals[j.name] = hold[j.motor_id]
+            command_all_joints(follower, follower_joints, hold_joint_goals)
+            print("홀드 목표 전송.", file=sys.stderr)
+            wait_reflex_recover(reflex, follower_joints, follower_pos, follower_load)
+            continue
 
         if verbose and cycle_start - last_verbose >= verbose_interval:
             last_verbose = cycle_start
@@ -254,9 +344,15 @@ def mirror_loop(
         if cycle_start - last_temp_check > 2.0:
             last_temp_check = cycle_start
             temps = follower.sync_read("Present_Temperature", follower_motor_ids)
-            hot = {i: t for i, t in temps.items() if t >= TEMP_WARN_C}
-            if hot:
-                print(f"경고: 팔로워 모터 과열 {hot} (°C)", file=sys.stderr)
+            trips = reflex.update(
+                cycle_start, present_raw, motor_goal, follower_load, temps=temps, comm_ok=comm_ok
+            )
+            for trip in trips:
+                print(f"[!] {trip.event.value}: {trip.detail}", file=sys.stderr)
+            for w in reflex.warnings():
+                print(f"경고: {w}", file=sys.stderr)
+            if reflex.mode is Mode.STOPPED:
+                raise RuntimeError("STOPPED: 과열/통신으로 안전을 위해 중단합니다.")
 
         elapsed = time.monotonic() - cycle_start
         if elapsed < period:
@@ -277,6 +373,9 @@ def main() -> None:
     follower_joints = build_arm_joints(cfg, "follower")
     follower_motor_ids = [mid for j in follower_joints for mid in j.motor_ids]
     joint_limits = make_joint_limits(cfg, follower_joints)
+
+    pairs = build_pairs(cfg)
+    reflex = Reflex(limits, pairs)
 
     leader = FeetechBus(cfg["leader"]["port"], cfg["leader"].get("baudrate", 1_000_000))
     follower = FeetechBus(cfg["follower"]["port"], cfg["follower"].get("baudrate", 1_000_000))
@@ -300,6 +399,7 @@ def main() -> None:
         )
         mirror_loop(
             leader, follower, leader_joints, follower_joints, cfg, limits, joint_limits,
+            reflex=reflex,
             verbose=args.verbose,
             verbose_interval=args.verbose_interval,
         )

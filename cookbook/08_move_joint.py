@@ -22,6 +22,9 @@ from sopo import (
     ContinuousJoint,
     DualMotorJoint,
     FeetechBus,
+    Mode,
+    Reflex,
+    ReflexConfig,
     SafetyLimits,
     SingleMotorJoint,
     apply_safety,
@@ -64,6 +67,38 @@ def read_motors(bus: FeetechBus, motor_ids: list[int]) -> dict[int, int]:
     return {mid: bus.read("Present_Position", mid) for mid in motor_ids}
 
 
+def read_loads(bus: FeetechBus, motor_ids: list[int]) -> dict[int, int]:
+    return {mid: bus.read("Present_Load", mid) for mid in motor_ids}
+
+
+def build_pairs(cfg: dict) -> dict[str, tuple[int, int, int]]:
+    pairs: dict[str, tuple[int, int, int]] = {}
+    for jcfg in cfg.get("joints", []):
+        if jcfg.get("type") == "dual":
+            ref = jcfg["reference_id"]
+            ids = tuple(jcfg["ids"])
+            mirror = ids[1] if ids[0] == ref else ids[0]
+            pairs[jcfg["name"]] = (ref, mirror, jcfg["K"])
+    return pairs
+
+
+def wait_recover(reflex: Reflex, present: dict[int, int], load: dict[int, int]) -> str:
+    """Block until user recovers ('r') or quits ('q'). Returns 'continue' or 'quit'."""
+    while True:
+        try:
+            key = input("리플렉스 발동. [r] 복구 시도, [q] 종료: ").strip().lower()
+        except (EOFError, KeyboardInterrupt):
+            return "quit"
+        if key == "q":
+            return "quit"
+        if key == "r":
+            ok, reason = reflex.recover(present, load)
+            if ok:
+                print("복구 성공. 이동 재개.")
+                return "continue"
+            print(f"복구 불가: {reason}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="관절 단위 이동 테스트")
     parser.add_argument("--config", default="configs/arm.yaml")
@@ -87,6 +122,10 @@ def main() -> None:
         position_limits={int(k): tuple(v) for k, v in (s.get("position_limits") or {}).items()},
     )
     apply_safety(bus, motor_ids, limits)
+
+    pairs = build_pairs(cfg)
+    reflex = Reflex(limits, pairs)
+
     ref_id = joint.reference_id if isinstance(joint, DualMotorJoint) else joint.motor_id
     bus.enable_torque(motor_ids)
 
@@ -95,26 +134,73 @@ def main() -> None:
     print(f"목표: {args.goal}")
 
     start = time.monotonic()
+    last_temp_check = start
     try:
         while True:
+            now = time.monotonic()
             present = read_motors(bus, motor_ids)
+            load = read_loads(bus, motor_ids)
+
             # 점프 금지: 사이클당 max_relative_target만큼만, 관절 리밋 안에서 (연속 관절은 자체 범위 클램프)
             if isinstance(joint, ContinuousJoint):
                 cur = joint.read(bus)
                 step = limits.max_relative_target
                 stepped = max(cur - step, min(cur + step, joint.clamp(args.goal)))
                 err = joint.clamp(args.goal) - cur
+                # Reflex는 논리적 좌표계로 비교해야 한다.
+                reflex_present = {joint.motor_id: cur}
             else:
                 stepped = clamp_goal({ref_id: args.goal}, {ref_id: present[ref_id]}, limits)[ref_id]
                 lo, hi = limits.joint_range(ref_id)
                 err = max(lo, min(hi, args.goal)) - present[ref_id]
+                reflex_present = present
+
+            goal = {ref_id: stepped}
+            if isinstance(joint, DualMotorJoint):
+                mirror_goal = max(0, min(4095, joint.K - stepped))
+                goal = {joint.reference_id: stepped, joint.mirror_id: mirror_goal}
+            elif isinstance(joint, ContinuousJoint):
+                goal = {joint.motor_id: stepped}
+
+            trips = reflex.update(now, reflex_present, goal, load)
+            for trip in trips:
+                print(f"  [!] {trip.event.value}: {trip.detail}", file=sys.stderr)
+
+            if reflex.mode is Mode.STOPPED:
+                print("STOPPED: 토크를 해제하고 종료합니다.", file=sys.stderr)
+                break
+
+            if reflex.mode is Mode.REFLEX:
+                hold = reflex.hold_targets(reflex_present)
+                for mid, val in hold.items():
+                    bus.write("Goal_Position", mid, val)
+                print("  홀드 목표 전송.", file=sys.stderr)
+                action = wait_recover(reflex, reflex_present, load)
+                if action == "quit":
+                    break
+                continue
+
             joint.command(bus, stepped)
-            print(f"  t={time.monotonic() - start:5.2f}s  pos={present}  err={err:5d}")
+
+            # 온도 경고 (2초마다)
+            if now - last_temp_check > 2.0:
+                last_temp_check = now
+                temps = {mid: bus.read("Present_Temperature", mid) for mid in motor_ids}
+                trips = reflex.update(now, reflex_present, goal, load, temps=temps)
+                for trip in trips:
+                    print(f"  [!] {trip.event.value}: {trip.detail}", file=sys.stderr)
+                for w in reflex.warnings():
+                    print(f"  [경고] {w}", file=sys.stderr)
+                if reflex.mode is Mode.STOPPED:
+                    print("STOPPED: 과열로 토크 해제 후 종료합니다.", file=sys.stderr)
+                    break
+
+            print(f"  t={now - start:5.2f}s  pos={present}  err={err:5d}")
 
             if abs(err) < 20:
                 print("목표 도달.")
                 break
-            if time.monotonic() - start > args.timeout:
+            if now - start > args.timeout:
                 print("시간 초과.")
                 break
             time.sleep(0.05)
