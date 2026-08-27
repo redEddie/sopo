@@ -83,3 +83,10 @@ Franka Research 3의 안전 계층을 sopo 수준에서 재현:
 - #8 J1 펌웨어 멀티턴 모드 시험 — https://github.com/redEddie/sopo/issues/8
 - #9 SopoRobot + lerobot 어댑터 — https://github.com/redEddie/sopo/issues/9
 
+## 흔들림 측정 (2026-08-28, `16_wobble_test --move J2:+300,J3:-300`)
+
+- J2/J3 왕복 중 J1/J4/J5/J6 출력축 이동 0~1틱, 도착 후 진동 0회 — **엔코더(출력축)에는 흔들림이 없음**
+- 눈에 보이는 흔들림은 엔코더 뒤쪽 기계 유격/휨(혼-브래킷 결합, 프린트 링크, 베이스 고정)으로 판단. 토크·PID·프리로드 대상 아님
+- 프리로드 4: 정착 0.40→0.35s (오차 범위), 유지
+- 다음: jog로 토크 유지 상태에서 링크를 손으로 흔들어 값이 안 변하는 관절 = 기계 보강 대상
+
