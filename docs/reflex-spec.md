@@ -74,8 +74,8 @@ class Reflex:
 
 ## 6. 통합 지점
 
-- `examples/mirror.py` `mirror_loop`: sync_read Present_Position + Present_Load(추가 1회) → `reflex.update` → REFLEX면 hold 목표 전송 후
-  키 입력 대기(`r` 복구 / `q` 종료), STOPPED면 토크 해제 후 종료. 기존 통신 오류·온도 코드는 reflex로 이전.
+- `examples/run_waypoints.py`(예정): 관절 read + Present_Load → `reflex.update` → REFLEX면 `joint.command()`로 홀드 후
+  키 입력 대기(`r` 복구 / `q` 종료), STOPPED면 토크 해제 후 종료.
 - `cookbook/08_move_joint.py`: 같은 방식. **리플렉스 1차 시험은 여기서** — 리더 암 불필요.
 - pairs는 yaml `joints`의 dual 항목에서 만든다. mode 변화와 Trip은 stderr에 시각과 함께 출력.
 
