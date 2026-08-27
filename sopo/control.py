@@ -136,11 +136,12 @@ class Blackbox:
         self.rows: deque = deque(maxlen=int(seconds * rate_hz))
         self.out_dir = Path(out_dir)
 
-    def record(self, t: float, mode: str, present: dict[int, int], goal: dict[int, int], load: dict[int, int], note: str = "") -> None:
+    def record(self, t: float, mode: str, present: dict[int, int], goal: dict[int, int], load: dict[int, int], note: str = "", volt: dict[int, int] | None = None) -> None:
         row = [f"{t:.3f}", mode]
         for i in self.ids:
             row += [present.get(i, ""), goal.get(i, ""), load.get(i, "")]
         row.append(note)
+        row.append(min(volt.values()) / 10 if volt else "")
         self.rows.append(row)
 
     def dump(self, reason: str) -> Path | None:
@@ -150,7 +151,7 @@ class Blackbox:
         path = self.out_dir / f"blackbox_{datetime.now():%Y%m%d_%H%M%S}_{reason}.csv"
         with path.open("w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["t", "mode"] + [f"{k}{i}" for i in self.ids for k in ("pos", "goal", "load")] + ["note"])
+            w.writerow(["t", "mode"] + [f"{k}{i}" for i in self.ids for k in ("pos", "goal", "load")] + ["note", "vmin"])
             w.writerows(self.rows)
         return path
 
@@ -179,6 +180,9 @@ def run_control_loop(
     rp: dict[int, int] = {}
     jitter_max = 0.0
     warned_limit: set[str] = set()
+    flagged: dict[tuple[int, str], float] = {}
+    last_volt = 0.0
+    volt_span = (99.0, 0.0)
     first = read_joints(bus, joints)
     for n, (lo, hi) in joint_limits.items():
         if not lo <= first[n] <= hi:
@@ -203,9 +207,26 @@ def run_control_loop(
                 soft = False
                 print("soft start done")
             rp = reflex_present_view(bus, joints, present)
-        except ConnectionError as e:
+        except Exception as e:  # comm failure or garbled packet: never let one cycle kill the loop
             comm_ok = False
             print(f"comm error: {e}", file=sys.stderr)
+
+        for mid, text in bus.pop_motor_errors().items():
+            key = (mid, text)
+            if key not in flagged or t0 - flagged[key] > 5.0:
+                flagged[key] = t0
+                print(f"motor {mid} status flag: {text}", file=sys.stderr)
+        volt = {}
+        if comm_ok and t0 - last_volt > 0.2:
+            last_volt = t0
+            try:
+                volt = bus.sync_read("Present_Voltage", ids)
+                vmin, vmax = min(volt.values()) / 10, max(volt.values()) / 10
+                volt_span = (min(volt_span[0], vmin), max(volt_span[1], vmax))
+                if vmin < 11.0 or vmax > 14.5:
+                    print(f"warn: bus voltage {vmin:.1f}-{vmax:.1f} V", file=sys.stderr)
+            except Exception:
+                pass
 
         temps = None
         if t0 - last_temp > 2.0 and comm_ok:
@@ -221,7 +242,7 @@ def run_control_loop(
             for w in reflex.warnings():
                 print(f"warn: {w}", file=sys.stderr)
             if blackbox:
-                blackbox.record(t0, reflex.mode.value, rp, mg, load, ";".join(t.event.value for t in trips))
+                blackbox.record(t0, reflex.mode.value, rp, mg, load, ";".join(t.event.value for t in trips), volt or None)
 
         if reflex.mode is Mode.STOPPED:
             if blackbox:
@@ -244,7 +265,7 @@ def run_control_loop(
         if verbose and t0 - last_status >= status_every:
             last_status = t0
             line = getattr(source, "last_status", "") or "  ".join(f"{n}:{present[n]}->{goal[n]}" for n in goal)
-            text = f"[{source.name}] {line}  | cycle {elapsed * 1e3:.1f}ms, max over {jitter_max * 1e3:.1f}ms"
+            text = f"[{source.name}] {line}  | {volt_span[0]:.1f}-{volt_span[1]:.1f}V | cycle {elapsed * 1e3:.1f}ms"
             if status_inline:
                 print("\r" + text.ljust(140), end="", flush=True)  # 한 줄에서 갱신
             else:

@@ -45,6 +45,7 @@ class FeetechBus:
         self.port = scs.PortHandler(port)
         self.port.setPacketTimeout = _patched_set_packet_timeout.__get__(self.port)
         self.packet = scs.PacketHandler(PROTOCOL_STS_SMS)
+        self.motor_errors: dict[int, int] = {}
 
     # --- connection -------------------------------------------------------
 
@@ -56,12 +57,29 @@ class FeetechBus:
 
     def disconnect(self, disable_torque_ids: list[int] | None = None) -> None:
         if disable_torque_ids:
-            for motor_id in disable_torque_ids:
+            still_on = self.torque_off_verified(disable_torque_ids)
+            if still_on:
+                import sys
+                print(f"!!! TORQUE STILL ON for motors {still_on} - run: python cookbook/11_torque_off.py", file=sys.stderr)
+        self.port.closePort()
+
+    def torque_off_verified(self, motor_ids: list[int], attempts: int = 3) -> list[int]:
+        """Disable torque with retries and read-back. Returns ids that are still enabled."""
+        still_on = []
+        for motor_id in motor_ids:
+            ok = False
+            for _ in range(attempts):
                 try:
                     self.write("Torque_Enable", motor_id, 0)
+                    self.write("Lock", motor_id, 0)
+                    if self.read("Torque_Enable", motor_id) == 0:
+                        ok = True
+                        break
                 except Exception:
-                    pass
-        self.port.closePort()
+                    time.sleep(0.02)
+            if not ok:
+                still_on.append(motor_id)
+        return still_on
 
     # --- discovery --------------------------------------------------------
 
@@ -95,7 +113,7 @@ class FeetechBus:
             value, comm, error = self.packet.read1ByteTxRx(self.port, motor_id, addr)
         else:
             value, comm, error = self.packet.read2ByteTxRx(self.port, motor_id, addr)
-        self._check(comm, error, f"read {reg} from id={motor_id}")
+        self._check(comm, error, f"read {reg} from id={motor_id}", motor_id)
         sign_bit = STS_SMS_SIGN_BITS.get(reg)
         return decode_sign_magnitude(value, sign_bit) if sign_bit else value
 
@@ -108,13 +126,21 @@ class FeetechBus:
             comm, error = self.packet.write1ByteTxRx(self.port, motor_id, addr, value)
         else:
             comm, error = self.packet.write2ByteTxRx(self.port, motor_id, addr, value)
-        self._check(comm, error, f"write {reg}={value} to id={motor_id}")
+        self._check(comm, error, f"write {reg}={value} to id={motor_id}", motor_id)
 
-    def _check(self, comm: int, error: int, what: str) -> None:
+    def _check(self, comm: int, error: int, what: str, motor_id: int | None = None) -> None:
         if comm != scs.COMM_SUCCESS:
             raise ConnectionError(f"Comm error on {what}: {self.packet.getTxRxResult(comm)}")
-        if error != 0:
-            raise RuntimeError(f"Motor error on {what}: {self.packet.getRxPacketError(error)}")
+        if error != 0 and motor_id is not None:
+            # Motor health flags (voltage / sensor / temperature / current / overload). The read or
+            # write itself succeeded; record the flag for the caller instead of aborting the loop.
+            self.motor_errors[motor_id] = error
+
+    def pop_motor_errors(self) -> dict[int, str]:
+        """Status-byte error flags seen since the last call, as text. Cleared on return."""
+        out = {mid: self.packet.getRxPacketError(err).strip() for mid, err in self.motor_errors.items()}
+        self.motor_errors.clear()
+        return out
 
     # --- bulk access ------------------------------------------------------
 
