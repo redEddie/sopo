@@ -123,6 +123,8 @@ while True:
 
 모드: `idle`(토크 OFF) · `guiding`(토크 OFF, 가르치기) · `move` · `reflex`(래칭) · `stopped`. 토크는 명령으로만 켜지고, 켜기 전 항상 `apply_safety()`.
 REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가는 길이다. `idle`/`guiding`(토크 OFF)은 항상 허용.
+액션 스트림이 0.5초 끊기면 **그 순간의 위치를 목표로 고정**해 홀드한다(끌려가지 않음). 데몬은 시작할 때 토크를 건드리지 않는다 —
+이전 세션이 홀드로 끝났으면 REFLEX(`INHERITED_HOLD`)로 이어받아 `recover`/`idle`을 기다린다.
 
 ## 안전 설계
 

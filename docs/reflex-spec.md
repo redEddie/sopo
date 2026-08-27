@@ -27,7 +27,7 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 | TRACKING_ERROR | `abs(goal-present) > err_ticks` 가 `t_error` 이상 지속 | err_ticks 150(≈13°), t_error 0.5 s | 캡 부족·걸림·미응답 통합 감지 |
 | PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` 가 `t_pair` 지속 | pair_tol 60틱, t_pair 0.3 s | 실측: 자유 이동 ±6, 잡혀서 포화 시 +21(기어 변형). 진짜 불일치는 수백 틱 |
 | COMM_LOSS | 연속 통신 실패 ≥ `comm_fail_max` | 5 | 연속 오류 5회 |
-| OVERTEMP | 온도 ≥ `temp_stop` (경고는 `temp_warn`) | 70 °C / 65 °C | 모터 Max_Temperature_Limit 기본 70 |
+| OVERTEMP | 온도 ≥ `temp_stop`가 **2회 연속**(2 s 간격) 확인될 때. 0~100 °C 밖 값은 버스 쓰레기로 무시 | 70 °C / 65 °C, temp_confirm 2 | 실사례: 한 바이트 어긋난 150 °C 한 샘플로 STOPPED 됐음 (2026-08-28) |
 | JOINT_LIMIT | 캘리브레이션된 모터의 **측정** 위치가 소프트 리밋을 `limit_margin` 넘게 벗어남 (명령 클램프는 이벤트 아님 — 외력에 밀리거나 캡 부족으로 처진 경우) | limit_margin 30틱 | libfranka `joint_position_limits_violation` |
 
 `cap`은 `SafetyLimits.torque_for(motor_id)`. 부하 부호는 미는 방향 → `backoff` 방향 결정에 쓴다.
