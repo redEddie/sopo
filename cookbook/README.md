@@ -242,6 +242,15 @@ python cookbook/14_reflex_check.py --config configs/arm.yaml --joint J4 --delta 
 
 Phase A: 손 대지 않고 왕복 10회 → 리플렉스 0건이면 합격(오탐 없음). Phase B: 왕복 중 관절을 손으로 잡음 → `[REFLEX] COLLISION …`이 0.5초 안에 뜨고, 홀드 후 손을 놓아도 밀지 않으며, `r`로 복구되면 합격. 실패 시 `ReflexConfig`(sat_ratio, t_collision, t_accel)나 캡을 조정한다. 블랙박스는 `logs/`에 남는다.
 
+### 15_set_pid.py — 서보 PID 읽기/쓰기 (강성·진동 튜닝)
+
+```bash
+python cookbook/15_set_pid.py --port /dev/ttyACM0 --ids 19,20,21          # 현재값
+python cookbook/15_set_pid.py --port /dev/ttyACM0 --ids 19 --p 48 --d 48  # 한 관절씩 시험
+```
+
+흔들림 대응 순서: ① `arm.yaml`의 `max_relative_target` 80→40, `acceleration` 30→15 (출발·정지 충격 감소) ② 듀얼 관절 `preload_ticks: 4` (두 모터가 서로 밀어 백래시 제거) ③ P/D 상향 (캡 안에서만 효과) ④ 캡 상향은 최후 — 캡이 곧 충돌 시 사람이 받는 힘. 근본적으로는 외력 추정(#1)이 있어야 강성과 안전을 동시에 얻는다.
+
 ---
 
 ## 5. 트러블슈팅

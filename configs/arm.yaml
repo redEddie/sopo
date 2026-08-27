@@ -24,11 +24,13 @@ joints:
     ids: [10, 11]
     reference_id: 11
     K: 4005
+    preload_ticks: 0           # anti-backlash: try 4 (mirror pushes 4 ticks against the reference)
   - name: J3
     type: dual
     ids: [15, 16]
     reference_id: 16
     K: 4100
+    preload_ticks: 0
   - name: J4
     type: continuous           # 360 deg roll, cable-limited like J1. setup: cookbook/12_continuous_setup.py --id 19 --center
     motor_id: 19
@@ -45,9 +47,9 @@ joints:
 safety:
   # 정격(스톨) 토크 대비 천분율. 300 = 30%. 사람 근처에서는 400을 넘기지 말 것.
   torque_limit: 300
-  # 가속도 레지스터 (약 8.7deg/s^2 단위). 낮을수록 부드럽게 출발/정지.
+  # 가속도 레지스터 (약 8.7deg/s^2 단위). 낮을수록 부드럽게 출발/정지 — 흔들림이 크면 10~15로.
   acceleration: 30
-  # 제어 주기당 목표 위치 최대 변화량 (틱). 급격한 움직임 차단.
+  # 제어 주기당 목표 위치 최대 변화량 (틱) = 최고 속도 (80 @50Hz ≈ 350°/s). 흔들림이 크면 40으로.
   max_relative_target: 80
   # 전 관절 공통 소프트 리밋 (틱, 0-4095)
   min_position: 200

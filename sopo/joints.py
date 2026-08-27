@@ -62,7 +62,7 @@ class DualMotorJoint:
     the joint stiff without fighting.
     """
 
-    def __init__(self, name: str, ids: tuple[int, int], reference_id: int, K: int):
+    def __init__(self, name: str, ids: tuple[int, int], reference_id: int, K: int, preload_ticks: int = 0):
         if reference_id not in ids:
             raise ValueError(f"reference_id {reference_id} must be one of {ids}")
         self.name = name
@@ -70,6 +70,10 @@ class DualMotorJoint:
         self.reference_id = reference_id
         self.mirror_id = ids[1] if ids[0] == reference_id else ids[0]
         self.K = K
+        # Anti-backlash: command the mirror motor preload_ticks *past* K - goal so the two gear trains
+        # push against each other and the joint has no free play. Costs a constant small load;
+        # keep it a few ticks (backlash is ~5 ticks on sts3250).
+        self.preload_ticks = preload_ticks
 
     @property
     def motor_ids(self) -> tuple[int, ...]:
@@ -80,7 +84,7 @@ class DualMotorJoint:
 
     def command(self, bus: FeetechBus, logical_goal: int) -> None:
         goal = _clamp_ticks(logical_goal)
-        mirror_goal = _clamp_ticks(self.K - goal)
+        mirror_goal = _clamp_ticks(self.K - goal - self.preload_ticks)
         bus.write("Goal_Position", self.reference_id, goal)
         bus.write("Goal_Position", self.mirror_id, mirror_goal)
 
@@ -192,7 +196,7 @@ def build_joints(configs: list[dict]) -> list[Joint]:
             joints.append(SingleMotorJoint(name, cfg["motor_id"]))
         elif jtype == "dual":
             ids = tuple(cfg["ids"])
-            joints.append(DualMotorJoint(name, ids, cfg["reference_id"], cfg["K"]))
+            joints.append(DualMotorJoint(name, ids, cfg["reference_id"], cfg["K"], int(cfg.get("preload_ticks", 0))))
         elif jtype == "continuous":
             joints.append(ContinuousJoint(name, cfg["motor_id"], cfg.get("range_ticks"), bool(cfg.get("firmware_multiturn", False)),
                                           cfg.get("home_abs")))
