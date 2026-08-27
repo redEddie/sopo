@@ -115,3 +115,11 @@
 - 사소: 온도 검사에서 같은 사이클에 update()를 두 번 호출 — 동작엔 문제 없음, 나중에 temps를 본 update에 합칠 것.
 - 다음: 스펙 8절 하드웨어 튜닝 (J4 캡150 왕복 10회 오탐 0 → 손으로 잡아 0.3~0.6s 내 COLLISION → r 복구).
 
+### 변경 (2026-08-27): 리더 암 없음 — mirror.py 삭제
+- `examples/mirror.py`와 yaml의 `leader/follower` 섹션 제거. 설정은 `arm: {port, baudrate}` 하나. 08은 이미 반영됨.
+- **새 작업**: `examples/run_waypoints.py` — 삭제된 mirror_loop(커밋 71025a7의 `examples/mirror.py`)에서 리더 읽기만 빼고
+  안전 루프(관절 read → clamp_joint_goal → command, reflex update/hold/recover, 온도, 통신)를 그대로 옮긴다.
+  명령 소스는 `configs/waypoints.example.yaml`의 관절 목표 리스트(`- {J2: 2000, J4: 2300}` …)를 순서대로, 각 목표에 도달(오차 < 30틱)하면 다음으로.
+  소프트스타트(첫 목표까지 스텝 20)는 유지. 리더 관련 `invert/offsets/map_leader_to_follower`는 버린다.
+- 이후 `sopod` 데몬의 첫 클라이언트도 이 스크립트다 (architecture.md 4절).
+

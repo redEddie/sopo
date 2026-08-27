@@ -1,19 +1,11 @@
-# sopo 미러 텔레오퍼레이션 설정 예시.
+# sopo 암 설정 예시 (리더 암 없음 — 웨이포인트/정책이 명령 소스).
 # 실제 암에 맞게 복사해서 수정하세요: cp configs/arm.example.yaml configs/arm.yaml
 
-leader:
-  port: /dev/ttyACM0
+arm:
+  port: /dev/ttyACM0        # udev 규칙 적용 시 /dev/sopo_follower
   baudrate: 1000000
 
-follower:
-  port: /dev/ttyACM1
-  baudrate: 1000000
-  # 축 방향이 리더와 반대인 팔로워 관절 이름 목록 (position -> 4095 - position)
-  invert: []
-  # 관절별 틱 오프셋 (관절 이름: 틱). 리더-팔로워 조립 각도 차이 보정용.
-  offsets: {}
-
-# 관절 정의. mirror.py는 이 목록을 읽어 리더/팔로워 각각의 Joint 객체를 만든다.
+# 관절 정의. 실행 스크립트(08_move_joint 등)가 이 목록으로 Joint 객체를 만든다.
 # single: 모터 1개 (J4/J5/J6/J7)
 # dual:   반전 장착된 모터 2개 (J2/J3). reference_id가 관절의 기준이 되며,
 #         미러 모터는 K - reference_goal 로 제어된다.
@@ -64,6 +56,6 @@ safety:
   #   torque_limits: {1: 150, 21: 150}
 
 # 실측값은 configs/calibration.yaml에 따로 저장된다 (05_find_limits.py / 06_gravity_load.py).
-# mirror.py는 이 파일이 같은 폴더에 있으면 위 safety 값 위에 덮어씌워 적용한다.
+# 실행 스크립트는 이 파일이 같은 폴더에 있으면 위 safety 값 위에 덮어씌워 적용한다.
 
 rate_hz: 50

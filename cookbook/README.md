@@ -90,7 +90,7 @@
 - 메인 루프는 `try/finally`로 감싸고, 종료 시 토크를 끈다.
 - 위치 명령은 현재 위치를 먼저 읽고 `clamp_goal()`으로 한 번에 움직일 거리를 제한한다.
 - 사람 손가락이 관절 사이에 들어가지 않도록 주의한다.
-- 관절별 위치 한계와 토크 캡은 `05_find_limits.py`/`06_gravity_load.py`로 실측해 `configs/calibration.yaml`에 기록한다. `examples/mirror.py`는 이 파일이 있으면 자동으로 적용한다.
+- 관절별 위치 한계와 토크 캡은 `05_find_limits.py`/`06_gravity_load.py`로 실측해 `configs/calibration.yaml`에 기록한다. `08_move_joint.py` 등 실행 스크립트가 이 파일이 있으면 자동으로 적용한다.
 
 ---
 
@@ -195,7 +195,7 @@ python cookbook/07_verify_torque.py --port /dev/ttyACM0 --ids 15,16 --invert 16 
 python cookbook/08_move_joint.py --config configs/arm.yaml --joint J2 --goal 2000
 ```
 
-설정의 `joints` 정의로 관절 하나를 안전하게 이동시킨다. 리더 암 없이 듀얼 모터 관절(J2/J3)이 `K - goal` 관계로 함께 움직이는지 확인할 때 쓴다.
+설정의 `joints` 정의로 관절 하나를 안전하게 이동시킨다. 듀얼 모터 관절(J2/J3)이 `K - goal` 관계로 함께 움직이는지, 리플렉스가 동작하는지 확인할 때 쓴다.
 
 ### 09_continuous_angle.py — 연속 관절(J1) 허용 범위 정하기
 
@@ -224,8 +224,8 @@ ls -l /dev/sopo_follower /dev/ttyACM*     # crw-rw-rw- 와 심볼릭 링크 확�
 ```
 
 임시 조치는 `sudo chmod 666 /dev/ttyACM0` (재연결 전까지만 유효). 규칙 파일의 시리얼 번호는
-`udevadm info -a -n /dev/ttyACM0 | grep serial`로 확인한다. 리더 암 어댑터를 추가하면 같은 방식으로
-`SYMLINK+="sopo_leader"` 줄을 추가하고 yaml의 port를 `/dev/sopo_leader`로 쓴다.
+`udevadm info -a -n /dev/ttyACM0 | grep serial`로 확인한다. 어댑터를 추가하면
+같은 방식으로 줄을 추가한다.
 
 ### sync_read가 "There is no status packet!"으로 실패
 

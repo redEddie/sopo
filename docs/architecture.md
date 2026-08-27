@@ -79,8 +79,8 @@
 
 ## 4. 진행 순서 (권장)
 
-1. `sopo/reflex.py` (진행 중) → 08/mirror 통합, 하드웨어 튜닝
-2. `sopod` 데몬: 루프 + 모드 + 워치독 + 상태 PUB + 명령 REP + 포트 락. mirror.py를 "리더 읽어 액션 스트림으로 보내는 클라이언트"로 재작성 → 첫 번째 클라이언트
+1. `sopo/reflex.py` (완료) → 08 통합(완료), 하드웨어 튜닝
+2. `sopod` 데몬: 루프 + 모드 + 워치독 + 상태 PUB + 명령 REP + 포트 락. run_waypoints.py를 "웨이포인트를 액션 스트림으로 보내는 클라이언트"로 재작성 → 첫 번째 클라이언트
 3. CLI (`sopo status`, `sopo recover`, `sopo torque off`) — 데몬 검증 도구
 4. `SopoRobot` + lerobot 어댑터 = 클라이언트 위에서
 5. 웹 GUI

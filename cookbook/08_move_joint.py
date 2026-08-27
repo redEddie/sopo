@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """설정의 관절 정의를 이용해 한 관절을 안전하게 이동시킨다.
 
-리더 암 없이도 듀얼 모터 관절(J2/J3)의 대칭 동작을 확인할 수 있다.
+듀얼 모터 관절(J2/J3)의 대칭 동작과 리플렉스를 확인할 수 있다.
 
 예시:
     python cookbook/08_move_joint.py --config configs/arm.yaml --joint J2 --goal 2000
@@ -113,7 +113,7 @@ def main() -> None:
     joint = build_joint(cfg, args.joint)
     motor_ids = list(joint.motor_ids)
 
-    bus = FeetechBus(cfg["leader"]["port"], cfg["leader"].get("baudrate", 1_000_000))
+    bus = FeetechBus(cfg["arm"]["port"], cfg["arm"].get("baudrate", 1_000_000))
     bus.connect()
 
     s = cfg.get("safety", {})
