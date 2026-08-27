@@ -14,9 +14,9 @@ from .control import command_joints, read_joints
 from .joints import ContinuousJoint, DualMotorJoint, Joint
 from .safety import SafetyLimits
 
-TEST_TICKS = 30      # 자가진단 이동량 (약 2.6 deg)
+TEST_TICKS = 40      # 자가진단 이동량 (약 3.5 deg). 목표를 한 번에 준다: 오차가 작으면 P제어 출력이 작아
+                     # (오차 10틱 ~ 80‰) 무거운 관절이 움직이지 못한다.
 ARRIVE = 12
-STEP = 10            # 자가진단 스텝 (느리게)
 
 
 def self_test(bus: FeetechBus, joints: list[Joint], limits: SafetyLimits, joint_limits: dict[str, tuple[int, int]] | None = None,
@@ -48,9 +48,7 @@ def self_test(bus: FeetechBus, joints: list[Joint], limits: SafetyLimits, joint_
             while True:
                 present = read_joints(bus, joints)
                 cur = present[name]
-                goal = max(cur - STEP, min(cur + STEP, target))
-                if isinstance(j, ContinuousJoint):
-                    goal = j.clamp(goal)
+                goal = j.clamp(target) if isinstance(j, ContinuousJoint) else target
                 command_joints(bus, joints, {**present, name: goal})
                 loads = bus.sync_read("Present_Load", ids)
                 result["max_load"] = max(result["max_load"], max(abs(v) for v in loads.values()))
