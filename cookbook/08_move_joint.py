@@ -82,7 +82,7 @@ def build_pairs(cfg: dict) -> dict[str, tuple[int, int, int]]:
     return pairs
 
 
-def wait_recover(reflex: Reflex, present: dict[int, int], load: dict[int, int]) -> str:
+def wait_recover(reflex: Reflex, refresh) -> str:
     """Block until user recovers ('r') or quits ('q'). Returns 'continue' or 'quit'."""
     while True:
         try:
@@ -92,6 +92,7 @@ def wait_recover(reflex: Reflex, present: dict[int, int], load: dict[int, int]) 
         if key == "q":
             return "quit"
         if key == "r":
+            present, load = refresh()  # 낡은 값이 아니라 지금 값으로 판정
             ok, reason = reflex.recover(present, load)
             if ok:
                 print("복구 성공. 이동 재개.")
@@ -127,6 +128,13 @@ def main() -> None:
     reflex = Reflex(limits, pairs)
 
     ref_id = joint.reference_id if isinstance(joint, DualMotorJoint) else joint.motor_id
+
+    def refresh():
+        """리플렉스 판정/복구용 현재 상태. 연속 관절은 논리각으로."""
+        present = read_motors(bus, motor_ids)
+        if isinstance(joint, ContinuousJoint):
+            present = {joint.motor_id: joint.read(bus)}
+        return present, read_loads(bus, motor_ids)
     bus.enable_torque(motor_ids)
 
     print(f"관절 {args.joint} 토크 ON, 모터 IDs: {motor_ids}")
@@ -172,10 +180,9 @@ def main() -> None:
 
             if reflex.mode is Mode.REFLEX:
                 hold = reflex.hold_targets(reflex_present)
-                for mid, val in hold.items():
-                    bus.write("Goal_Position", mid, val)
+                joint.command(bus, hold[ref_id])  # 연속 관절 논리각 변환·듀얼 미러는 command()가 처리
                 print("  홀드 목표 전송.", file=sys.stderr)
-                action = wait_recover(reflex, reflex_present, load)
+                action = wait_recover(reflex, refresh)
                 if action == "quit":
                     break
                 continue

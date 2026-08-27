@@ -53,7 +53,7 @@
 
 Franka Research 3의 안전 계층을 sopo 수준에서 재현:
 
-- [ ] **충돌 리플렉스** `sopo/reflex.py` — 스펙 확정: `docs/reflex-spec.md` (포화 300ms+오차 정체 → 홀드 래칭, recover 명시)
+- [x] **충돌 리플렉스** `sopo/reflex.py` 구현 + 테스트 9종 (Kimi 구현, Claude 리뷰 2 수정). **남음: 하드웨어 튜닝 (`docs/reflex-spec.md` 8절)**
 - [ ] **명령 레이트 리미터**: Franka는 위치/속도/가속/저크 한계를 인터페이스에서 강제.
       → sopo: `clamp_goal`(위치·스텝)에 더해 속도/가속 프로파일 제한 추가
 - [ ] **접촉 vs 충돌 2단 임계값**: 낮은 임계(접촉 감지→감속)와 높은 임계(충돌→정지) 구분

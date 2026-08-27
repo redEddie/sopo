@@ -243,26 +243,19 @@ def soft_start(
     )
 
 
-def wait_reflex_recover(
-    reflex: Reflex,
-    follower_joints,
-    follower_pos: dict[str, int],
-    follower_load: dict[int, int],
-) -> None:
-    """Block for user input while in REFLEX; 'r' tries recover, 'q' aborts."""
+def reflex_present_view(follower: FeetechBus, follower_joints, follower_pos: dict[str, int]) -> dict[int, int]:
+    """리플렉스용 모터별 현재 위치: 듀얼 쌍은 raw 둘 다(합 검사용), 연속 관절은 논리각."""
+    ids = [mid for j in follower_joints for mid in j.motor_ids]
+    present = follower.sync_read("Present_Position", ids)
+    for j in follower_joints:
+        if isinstance(j, ContinuousJoint) and j.name in follower_pos:
+            present[j.motor_id] = follower_pos[j.name]
+    return present
 
-    def _motor_present() -> dict[int, int]:
-        out: dict[int, int] = {}
-        for j in follower_joints:
-            pos = follower_pos[j.name]
-            if isinstance(j, DualMotorJoint):
-                out[j.reference_id] = pos
-            elif isinstance(j, ContinuousJoint):
-                out[j.motor_id] = pos
-            else:
-                out[j.motor_id] = pos
-        return out
 
+def wait_reflex_recover(reflex: Reflex, follower: FeetechBus, follower_joints) -> None:
+    """REFLEX 상태에서 사용자 입력 대기. 'r'은 지금 값을 다시 읽어 복구 시도, 'q'는 종료."""
+    ids = [mid for j in follower_joints for mid in j.motor_ids]
     while reflex.mode is Mode.REFLEX:
         try:
             key = input("리플렉스 발동. [r] 복구 시도, [q] 종료: ").strip().lower()
@@ -271,7 +264,10 @@ def wait_reflex_recover(
         if key == "q":
             raise RuntimeError("사용자가 리플렉스 상태에서 종료했습니다.")
         if key == "r":
-            ok, reason = reflex.recover(_motor_present(), follower_load)
+            follower_pos = read_all_joints(follower, follower_joints)  # 연속 관절 turn 갱신
+            present = reflex_present_view(follower, follower_joints, follower_pos)
+            load = follower.sync_read("Present_Load", ids)
+            ok, reason = reflex.recover(present, load)
             if ok:
                 print("복구 성공. 미러링 재개.")
                 return
@@ -299,6 +295,7 @@ def mirror_loop(
     follower_load: dict[int, int] = {}
     goal: dict[str, int] = {}
     present_raw: dict[int, int] = {}
+    follower_pos: dict[str, int] = {}
     while True:
         cycle_start = time.monotonic()
         comm_ok = True
@@ -309,8 +306,8 @@ def mirror_loop(
             target = map_leader_to_follower(leader_pos, cfg, follower_joints)
             goal = clamp_joint_goal(target, follower_pos, joint_limits, limits.max_relative_target, continuous)
             command_all_joints(follower, follower_joints, goal)
-            # Reflex needs both reference and mirror positions for pair checks.
-            present_raw = follower.sync_read("Present_Position", follower_motor_ids)
+            # 리플렉스용: 듀얼 쌍은 raw 둘 다, 연속 관절(J1)은 논리각 — goal과 같은 프레임이어야 함
+            present_raw = reflex_present_view(follower, follower_joints, follower_pos)
         except ConnectionError as e:
             comm_ok = False
             print(f"통신 오류: {e}", file=sys.stderr)
@@ -334,7 +331,7 @@ def mirror_loop(
                     hold_joint_goals[j.name] = hold[j.motor_id]
             command_all_joints(follower, follower_joints, hold_joint_goals)
             print("홀드 목표 전송.", file=sys.stderr)
-            wait_reflex_recover(reflex, follower_joints, follower_pos, follower_load)
+            wait_reflex_recover(reflex, follower, follower_joints)
             continue
 
         if verbose and cycle_start - last_verbose >= verbose_interval:

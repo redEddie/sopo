@@ -95,6 +95,17 @@ def test_collision_but_error_decreasing():
     assert r.mode is Mode.MOVE
 
 
+def test_collision_creeping_under_hand():
+    """Scenario 4b (07 실험): saturated while creeping 1 tick/cycle -> still a COLLISION."""
+    cfg = ReflexConfig(t_collision=0.3, progress_ticks=40)
+    r = Reflex(LIMITS, PAIRS, cfg)
+    trips = []
+    for i in range(20):  # 0.4 s at 50 Hz, error shrinks by 1 tick per cycle
+        trips += r.update(now=i * 0.02, present={19: 1000 + i}, goal={19: 1080 + i}, load={19: 150})
+    assert [t.event for t in trips] == [Event.COLLISION]
+    assert r.mode is Mode.REFLEX
+
+
 def test_tracking_error():
     """Scenario 5: persistent large error with low load triggers TRACKING_ERROR."""
     cfg = ReflexConfig(err_ticks=150, t_error=0.5)

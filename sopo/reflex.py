@@ -34,6 +34,7 @@ class Event(Enum):
 class ReflexConfig:
     sat_ratio: float = 0.95
     t_collision: float = 0.3
+    progress_ticks: int = 40  # 포화 창(t_collision) 동안 이만큼 못 나아가면 막힌 것
     accel_step: int = 40
     t_accel: float = 0.2
     err_ticks: int = 150
@@ -57,7 +58,7 @@ class _MotorState:
 
     def __init__(self) -> None:
         self.sat_start: float | None = None
-        self.min_err: int | None = None
+        self.err_at_sat: int | None = None
         self.err_start: float | None = None
         self.accel_until: float = 0.0
         self.last_goal: int | None = None
@@ -187,31 +188,30 @@ class Reflex:
                     state.accel_until = now + self._cfg.t_accel
             state.last_goal = tgt
 
-            # COLLISION detection.
+            # COLLISION detection: saturated for a full window AND little progress
+            # in that window. A joint creeping under a hand (1-2 ticks/cycle) still
+            # trips; a heavy-but-legit move that keeps progressing does not.
             if now >= state.accel_until:
                 if load_abs >= self._cfg.sat_ratio * cap:
                     if state.sat_start is None:
                         state.sat_start = now
-                        state.min_err = err
-                    else:
-                        if state.min_err is not None and err < state.min_err:
-                            state.min_err = err
-                            state.sat_start = now
-                        # else: error is not decreasing
-                        if (
-                            now - state.sat_start >= self._cfg.t_collision
-                            and state.min_err is not None
-                            and err >= state.min_err
-                        ):
+                        state.err_at_sat = err
+                    elif now - state.sat_start >= self._cfg.t_collision:
+                        progress = (state.err_at_sat or 0) - err
+                        if progress < self._cfg.progress_ticks:
                             trip = Trip(
                                 Event.COLLISION,
                                 motor_id,
-                                f"load {load_val}‰ saturated for {now - state.sat_start:.3f}s",
+                                f"load {load_val}‰ saturated {now - state.sat_start:.2f}s, "
+                                f"progress {progress} ticks < {self._cfg.progress_ticks}",
                             )
                             new_trips.extend(self._emit(trip))
+                        else:
+                            state.sat_start = now  # 진행 중: 새 창 시작
+                            state.err_at_sat = err
                 else:
                     state.sat_start = None
-                    state.min_err = None
+                    state.err_at_sat = None
 
             # TRACKING_ERROR detection.
             if err > self._cfg.err_ticks:
@@ -257,7 +257,7 @@ class Reflex:
                 if trip.motor_id in self._last_load:
                     load_sign = 1 if self._last_load[trip.motor_id] >= 0 else -1
                 raw = present.get(trip.motor_id, 0)
-                backed = max(0, min(4095, raw - load_sign * self._cfg.backoff_ticks))
+                backed = raw - load_sign * self._cfg.backoff_ticks
                 targets[trip.motor_id] = backed
 
         self._last_hold_target = dict(targets)
@@ -290,7 +290,7 @@ class Reflex:
         self._last_collision = None
         for state in self._motor_states.values():
             state.sat_start = None
-            state.min_err = None
+            state.err_at_sat = None
             state.err_start = None
         return True, ""
 

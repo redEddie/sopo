@@ -22,7 +22,7 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 
 | 이벤트 | 조건 | 기본값 | 근거 |
 |---|---|---|---|
-| COLLISION | `abs(load) >= sat_ratio * cap` 가 `t_collision` 이상 지속 **AND** 그동안 추종 오차 `abs(goal-present)`가 줄지 않음(최소값 갱신 없음) | sat_ratio 0.95, t_collision 0.3 s | 07: 무부하 85%, 잡으면 100% 포화 |
+| COLLISION | `abs(load) >= sat_ratio * cap` 가 `t_collision` 창 동안 지속 **AND** 그 창에서 추종 오차 감소량 < `progress_ticks` (손에 잡혀 1~2틱씩 기어가는 것도 충돌) | sat_ratio 0.95, t_collision 0.3 s, progress_ticks 40 | 07: 무부하 85%, 잡으면 100% 포화, 잡힌 채 ~110틱/s 로 기어감 |
 | (가속 유예) | 목표가 `accel_step` 이상 바뀐 직후 `t_accel` 동안은 COLLISION 판정 보류 | accel_step 40틱, t_accel 0.2 s | Franka의 acceleration 임계값 상향에 대응 |
 | TRACKING_ERROR | `abs(goal-present) > err_ticks` 가 `t_error` 이상 지속 | err_ticks 150(≈13°), t_error 0.5 s | 캡 부족·걸림·미응답 통합 감지 |
 | PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` | pair_tol 20틱 | 쌍이 서로 싸움 |

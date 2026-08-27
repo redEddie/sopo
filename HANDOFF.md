@@ -105,3 +105,13 @@
   (b) K를 05 실측(`pair_constants`)에서 읽기; (c) Joint가 `{id: tick}`을 반환하고 루프는 sync_read/sync_write 1회씩;
   (d) HANDOFF 2~3번(남은 측정, 08_persist_caps), 5~6번(SopoRobot, reflex.py).
 - 규칙 추가: **토크를 켜는 모든 스크립트는 목표를 clamp_goal/스텝 클램프 없이 보내지 않는다** (08에서 위반 발견됨).
+
+### 리뷰 2 (Claude, 2026-08-27) — reflex.py 1차 구현 (33c140b) 점검 결과, 직접 수정해 커밋
+- **미탐 버그**: 오차가 1틱이라도 줄면 포화 타이머를 리셋 → 07 실험처럼 손에 잡힌 채 기어가는 경우 COLLISION이 영원히 안 뜸.
+  → 규칙 변경: "포화가 t_collision 창 동안 지속 **AND** 창 내 진행량 < `progress_ticks`(40)" (스펙 3절 갱신). 테스트 4b(기어가기) 추가.
+- **복구 불가 버그**: 08/mirror의 recover가 리플렉스 발동 시점의 낡은 부하값을 재사용 → 항상 "load too high". → 복구 시 다시 읽도록.
+- **J1 프레임 버그**: 08은 홀드 목표를 bus.write로 직접(논리각 4096 초과 가능), mirror는 raw를 joint.command에 전달(논리각과 불일치 → 반턴 이동 위험).
+  → 홀드는 항상 `joint.command()` 경유, reflex present는 연속 관절만 논리각(`reflex_present_view`).
+- 사소: 온도 검사에서 같은 사이클에 update()를 두 번 호출 — 동작엔 문제 없음, 나중에 temps를 본 update에 합칠 것.
+- 다음: 스펙 8절 하드웨어 튜닝 (J4 캡150 왕복 10회 오탐 0 → 손으로 잡아 0.3~0.6s 내 COLLISION → r 복구).
+
