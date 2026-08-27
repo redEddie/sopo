@@ -33,14 +33,18 @@ sopo/            핵심 패키지
   reflex.py        호스트 측 충돌 리플렉스 (포화+정체 → 홀드 래칭, recover)
   control.py       다관절 안전 제어 루프 (클램프 → 명령 → reflex → 홀드/복구)
   sources.py       명령 소스 경계 (lerobot Teleoperator 구조): WaypointSource/JogSource + 리더 암/정책 플레이스홀더
-  startup.py       자가진단 루틴 (init.py가 사용)
+  startup.py       자가진단 루틴 (init.py / sopod init)
+  daemon.py        **sopod** — 버스를 독점하는 하위 제어기 데몬 (50Hz 루프 + reflex + 워치독, ZMQ 상태/명령/액션)
+  client.py        SopoClient: 상태 구독 · 명령 · 액션 스트림 (정책/조그/GUI는 이걸로만 접근)
+  cli.py           python -m sopo.cli status|watch|move|idle|guiding|recover|init|goto|shutdown
   config.py        arm.yaml/calibration.yaml 로더
 cookbook/        Feetech 기초 조작 쿡북 — README.md 참조
                    (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정 → 위치 한계 실측 → 자중 토크 실측)
 examples/
   init.py          초기화: 자가진단(관절별 2.6° 왕복) → 연속 관절 home 확정 → standby_pose 대기
   run_waypoints.py 다관절 웨이포인트 주행 (안전 루프의 첫 클라이언트)
-  jog.py           키보드 조그 — 리더 암 없이 관절 실시간 이동, 자세 찾기
+  jog.py           키보드 조그 (버스 직접, 데몬 없이)
+  jog_client.py    키보드 조그 — sopod 클라이언트 (액션 스트림)
 logs/            블랙박스 CSV (리플렉스/정지 시 직전 60초 자동 저장, gitignore)
 configs/
   arm.yaml         이 암의 정의 (포트/관절/K/range_ticks/안전 기본값) — 커밋됨
@@ -84,6 +88,26 @@ python examples/jog.py --config configs/arm.yaml
 python cookbook/10_persist_caps.py --config configs/arm.yaml --dry-run
 python cookbook/10_persist_caps.py --config configs/arm.yaml
 ```
+
+## sopod — 하위 제어기 데몬 (Franka의 Control box + FCI 포지션)
+
+```bash
+# 터미널 1: 데몬 (IDLE, 토크 OFF로 시작. 버스는 데몬만 잡는다 — 쿡북 스크립트와 동시 실행 불가)
+sopod --config configs/arm.yaml            # 또는 python -m sopo.daemon
+
+# 터미널 2: 상태 / 명령
+python -m sopo.cli watch                   # 50Hz 상태 스트림 (모드, 관절, 부하, 전압, 지터)
+python -m sopo.cli init                    # 자가진단 → standby_pose, 토크 유지
+python -m sopo.cli goto J4=2300 J6=2500    # 단발 목표 (MOVE 모드에서)
+python -m sopo.cli recover                 # REFLEX 래칭 해제
+python -m sopo.cli idle                    # 토크 OFF
+
+# 터미널 3: 액션 스트림 클라이언트 (정책·조그). 0.5초 끊기면 데몬이 홀드
+python examples/jog_client.py
+```
+
+파이썬에서: `from sopo.client import SopoClient; c = SopoClient(); c.command("move"); c.send_action({"J4": 2300})`.
+모드: `idle`(토크 OFF) · `guiding`(토크 OFF, 가르치기) · `move` · `reflex`(래칭) · `stopped`. 토크는 명령으로만 켜지고, 켜기 전 항상 `apply_safety()`.
 
 ## 안전 설계
 

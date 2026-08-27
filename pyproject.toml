@@ -9,6 +9,7 @@ dependencies = [
     "feetech-servo-sdk>=1.0.0,<2.0.0",
     "pyserial>=3.5",
     "pyyaml>=6.0",
+    "pyzmq>=25",
 ]
 
 [project.optional-dependencies]
@@ -17,6 +18,10 @@ test = ["pytest>=8.0"]
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
+[project.scripts]
+sopod = "sopo.daemon:main"
+sopo = "sopo.cli:main"
 
 [tool.setuptools]
 packages = ["sopo"]

@@ -43,12 +43,13 @@
       남음: 듀얼 쌍 K 일관성 검사, K 실측값 연동, sync_read/write 통합
 - [x] sm8512bl Return_Delay_Time 250 → 0 설정 (EPROM) — sync_read 실패 근본 원인이었음.
       apply_safety()가 이제 전 모터에 0을 강제해 재발 방지
-- [ ] `SopoRobot` 클래스: `connect() / get_observation() / send_action()` 경계 확립
+- [x] **sopod 데몬 v0** (2026-08-28, #3): 버스 독점(포트 락), 50Hz 루프, 모드 상태머신, ZMQ 상태 PUB/명령 REP/액션 SUB, 워치독 홀드, init/goto/recover, 클라이언트·CLI·jog_client. 가짜 버스 통합 테스트
+- [ ] `SopoRobot` 클래스: `connect() / get_observation() / send_action()` — 이제 SopoClient 위에 올린다 (#9)
 - [ ] 캘리브레이션 층: homing offset + 관절 범위 실측 → 틱 ↔ 정규화 좌표([-1,1] 또는 rad) 변환
 - [ ] 명령 보간: 정책 10~30Hz → 버스 50~100Hz 스무딩 (Franka의 1kHz 보간에 대응)
-- [ ] 정책 워치독: 액션 수신 끊기면 자세 유지/토크 해제
+- [x] 정책 워치독: 액션 0.5s 끊기면 홀드 (sopod StreamSource)
 - [ ] lerobot `Robot` 인터페이스 호환 래퍼 → record/ACT/pi0 파이프라인 직결
-- [ ] (선택) ZMQ/gRPC 서버로 제어기-정책 프로세스 분리
+- [x] ZMQ로 제어기-정책 프로세스 분리 (sopod)
 
 ## 3. Franka 안전장치 벤치마킹
 

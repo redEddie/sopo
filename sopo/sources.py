@@ -163,6 +163,47 @@ class JogSource:
         pass
 
 
+class StreamSource:
+    """외부(정책·조그 클라이언트)가 보내는 액션 스트림. sopod가 쓴다.
+
+    push(action, now)로 최신 액션을 갱신하고, get_action은 마지막 액션을 돌려준다.
+    watchdog_s 동안 새 액션이 없으면 현재 위치(홀드)를 돌려준다 — 정책이 멈추면 팔도 멈춘다.
+    """
+
+    name = "stream"
+
+    def __init__(self, watchdog_s: float = 0.5):
+        self.watchdog_s = watchdog_s
+        self._action: dict[str, int] | None = None
+        self._last_push = -1e9
+        self._sticky = False
+        self.stale = True
+
+    def push(self, action: dict[str, int], now: float, sticky: bool = False) -> None:
+        """sticky=True: 다음 push까지 워치독 없이 유지 (goto 같은 단발 목표)."""
+        self._action = {str(k): int(v) for k, v in action.items()}
+        self._last_push = now
+        self._sticky = sticky
+
+    def clear(self) -> None:
+        self._action = None
+
+    def connect(self) -> None:
+        pass
+
+    def get_action(self, present: dict[str, int], now: float) -> dict[str, int]:
+        self.stale = self._action is None or (not self._sticky and (now - self._last_push) > self.watchdog_s)
+        if self.stale:
+            return dict(present)  # 홀드
+        return {n: self._action.get(n, present[n]) for n in present}
+
+    def is_done(self) -> bool:
+        return False
+
+    def disconnect(self) -> None:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # 플레이스홀더 1: 리더 암 (lerobot Teleoperator / SO-ARM leader 구조)
 #

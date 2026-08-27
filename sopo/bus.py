@@ -6,8 +6,11 @@ so cookbook scripts can show exactly what goes over the wire.
 
 from __future__ import annotations
 
+import fcntl
+import os
 import time
 from contextlib import contextmanager
+from pathlib import Path
 
 import scservo_sdk as scs
 
@@ -50,6 +53,21 @@ class FeetechBus:
     # --- connection -------------------------------------------------------
 
     def connect(self) -> None:
+        # One process per bus: a lock file makes sopod and the cookbook scripts mutually exclusive.
+        self._lock_path = Path(f"/tmp/sopo-{Path(self.port_name).name}.lock")
+        self._lock_fd = os.open(self._lock_path, os.O_CREAT | os.O_RDWR, 0o666)
+        try:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            owner = ""
+            try:
+                owner = os.read(self._lock_fd, 64).decode().strip()
+            except Exception:
+                pass
+            os.close(self._lock_fd)
+            raise ConnectionError(f"{self.port_name} is in use by another sopo process ({owner or 'unknown pid'}) - stop it first (sopod running?)")
+        os.ftruncate(self._lock_fd, 0)
+        os.write(self._lock_fd, str(os.getpid()).encode())
         if not self.port.openPort():
             raise ConnectionError(f"Failed to open port {self.port_name}")
         self.port.setBaudRate(self.baudrate)
@@ -62,6 +80,11 @@ class FeetechBus:
                 import sys
                 print(f"!!! torque-off NOT VERIFIED for motors {still_on} (broadcast off was sent) - check with: python cookbook/11_torque_off.py", file=sys.stderr)
         self.port.closePort()
+        try:
+            fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+            os.close(self._lock_fd)
+        except Exception:
+            pass
 
     def torque_off_verified(self, motor_ids: list[int], attempts: int = 3) -> list[int]:
         """Disable torque robustly. Returns ids whose torque-off could not be verified.

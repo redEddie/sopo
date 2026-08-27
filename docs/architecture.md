@@ -51,8 +51,8 @@
 | L2 관절 모델 | `sopo.joints` (single/dual/continuous), 캘리브레이션 틱↔rad, 쌍 상수 K | 1차 완료 |
 | L3 안전 감독 | `sopo.reflex` (충돌·추종오차·쌍 불일치·통신·온도), 레이트 리미터, 모드 상태머신, 래칭 에러, `recover()` | 스펙 확정 (`docs/reflex-spec.md`) |
 | L4 로봇 API | `sopo.robot.SopoRobot`: `connect/get_observation/send_action`, 보간, 정규화 | 예정 |
-| L5 데몬 + IPC | `sopod`: 루프 + 상태 PUB + 명령 REP + 액션 SUB + 워치독 + 포트 락 | 예정 = "FCI" |
-| L6 클라이언트 | `sopo.client` (파이썬), CLI(`sopo status/torque/recover/mode`), lerobot 어댑터, (선택) ROS2 브리지 | 예정 |
+| L5 데몬 + IPC | `sopod`: 루프 + 상태 PUB + 명령 REP + 액션 SUB + 워치독 + 포트 락 | **v0 완료 (2026-08-28)**. 남음: 안전 설정 잠금 채널, 블랙박스 링버퍼 상시화, 지터 기반 RT 조치 |
+| L6 클라이언트 | `sopo.client` (파이썬), CLI(`sopo status/torque/recover/mode`), lerobot 어댑터, (선택) ROS2 브리지 | client/CLI/jog_client 완료. lerobot 어댑터 예정(#9) |
 | L7 GUI | 웹(FastAPI + WebSocket + 브라우저) 또는 TUI — L6 위의 구독자 | 나중 |
 
 횡단 관심사:
