@@ -97,7 +97,7 @@ def main() -> None:
     bus = FeetechBus(cfg["arm"]["port"], cfg["arm"].get("baudrate", 1_000_000))
     bus.connect()
     for w in verify_eprom(bus, limits, ids):
-        print(f"경고(EPROM 드리프트): {w} — cookbook/10_persist_caps.py 실행 권장", file=sys.stderr)
+        print(f"warn (EPROM drift): {w} -> run cookbook/10_persist_caps.py", file=sys.stderr)
 
     reader = KeyReader()
     source = JogSource([j.name for j in joints], reader.poll, step=args.step)
@@ -111,20 +111,20 @@ def main() -> None:
 
     try:
         apply_safety(bus, ids, limits)
-        print(f"토크 캡: " + ", ".join(f"{i}:{limits.torque_for(i) / 10:.0f}%" for i in ids))
-        print("←/→(a/d) 이동  ↑/↓(w/s)·1~6 관절 선택  +/- 스텝  space(h) 홀드  q 종료")
+        print("torque caps: " + ", ".join(f"{i}:{limits.torque_for(i) / 10:.0f}%" for i in ids))
+        print("keys: left/right (a/d) move | up/down (w/s), 1-6 select joint | +/- step | space (h) hold | q quit")
         bus.enable_torque(ids)
         with reader:
             run_control_loop(bus, joints, limits, joint_limits, reflex, source,
                              rate_hz=cfg.get("rate_hz", 50), on_reflex=on_reflex, verbose=True, status_every=0.1, status_inline=True,
                              blackbox=Blackbox(ids, rate_hz=cfg.get("rate_hz", 50)))
     except KeyboardInterrupt:
-        print("\n종료 요청.")
+        print("\nquit requested")
     except RuntimeError as e:
-        print(f"\n중단: {e}", file=sys.stderr)
+        print(f"\nstopped: {e}", file=sys.stderr)
     finally:
         reader.restore()
-        print("토크를 해제합니다 — 암이 내려올 수 있으니 잡아주세요.")
+        print("torque off - support the arm, it may drop")
         bus.disconnect(disable_torque_ids=ids)
 
 

@@ -45,6 +45,7 @@ class ReflexConfig:
     temp_warn: int = 65
     temp_stop: int = 70
     backoff_ticks: int = 0
+    recover_load_ratio: float = 0.9  # recover() allowed while hold load < this * cap (gravity load is not external force)
     limit_margin: int = 30  # 소프트 리밋을 이만큼 넘어야 JOINT_LIMIT (클램프 자체는 이벤트 아님)
     t_limit: float = 0.5    # 리밋 밖에 이만큼 머물러야 JOINT_LIMIT (되돌아오는 중이면 안 뜸)
 
@@ -210,7 +211,7 @@ class Reflex:
                     elif now - state.sat_start >= self._cfg.t_collision:
                         progress = (pos - (state.pos_at_sat or pos)) * state.dir_at_sat
                         if progress < self._cfg.progress_ticks:
-                            hint = " (밀림)" if progress < 0 else (" (느린 진행 — 캡 부족?)" if progress > 0 else "")
+                            hint = " (pushed back)" if progress < 0 else (" (slow progress, cap too low?)" if progress > 0 else "")
                             trip = Trip(
                                 Event.COLLISION,
                                 motor_id,
@@ -316,8 +317,8 @@ class Reflex:
 
         for motor_id in self._motor_ids:
             cap = self._limits.torque_for(motor_id)
-            if abs(load.get(motor_id, 0)) >= 0.5 * cap:
-                return False, f"motor {motor_id} load too high"
+            if abs(load.get(motor_id, 0)) >= self._cfg.recover_load_ratio * cap:
+                return False, f"motor {motor_id} load {abs(load.get(motor_id, 0))}‰ >= {self._cfg.recover_load_ratio:.0%} of cap {cap}"
             hold = self._last_hold_target.get(motor_id)
             if hold is not None and motor_id in present:
                 if abs(present[motor_id] - hold) > 30:

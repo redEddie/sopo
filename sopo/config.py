@@ -31,11 +31,7 @@ def load_arm_config(path: str | Path) -> dict:
             raise ValueError(f"{path}: 'arm: {{port, baudrate}}' 섹션이 필요합니다 (configs/arm.yaml 참고)")
         chosen = next((c for c in candidates if Path(c["port"]).exists()), candidates[0])
         cfg["arm"] = {"port": chosen["port"], "baudrate": chosen.get("baudrate", DEFAULT_BAUDRATE)}
-        print(
-            f"경고: {path}에 'arm:' 섹션이 없어 구 형식(leader/follower)의 포트 {chosen['port']}를 씁니다. "
-            "configs/arm.yaml 형식으로 갱신하세요.",
-            file=sys.stderr,
-        )
+        print(f"warn: {path} has no 'arm:' section, using legacy leader/follower port {chosen['port']} - update to the arm.yaml schema", file=sys.stderr)
 
     if "joints" not in cfg:
         raise ValueError(f"{path}: 'joints' 섹션이 없습니다. configs/arm.yaml을 참고하세요.")
@@ -47,7 +43,7 @@ def load_arm_config(path: str | Path) -> dict:
         for key in ("position_limits", "torque_limits"):
             if key in calib:
                 safety.setdefault(key, {}).update(calib[key])
-        print(f"캘리브레이션 적용: {calib_path}")
+        print(f"calibration applied: {calib_path}")
     return cfg
 
 

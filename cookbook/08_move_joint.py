@@ -75,7 +75,7 @@ def wait_recover(reflex: Reflex, refresh) -> str:
     """Block until user recovers ('r') or quits ('q'). Returns 'continue' or 'quit'."""
     while True:
         try:
-            key = input("리플렉스 발동. [r] 복구 시도, [q] 종료: ").strip().lower()
+            key = input("REFLEX latched. [r] recover / [q] quit: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             return "quit"
         if key == "q":
@@ -84,9 +84,9 @@ def wait_recover(reflex: Reflex, refresh) -> str:
             present, load = refresh()  # 낡은 값이 아니라 지금 값으로 판정
             ok, reason = reflex.recover(present, load)
             if ok:
-                print("복구 성공. 이동 재개.")
+                print("recovered, resuming")
                 return "continue"
-            print(f"복구 불가: {reason}")
+            print(f"recover refused: {reason}")
 
 
 def main() -> None:
@@ -164,13 +164,13 @@ def main() -> None:
                 print("\n" + describe_trip(trip, [joint]), file=sys.stderr)
 
             if reflex.mode is Mode.STOPPED:
-                print("STOPPED: 토크를 해제하고 종료합니다.", file=sys.stderr)
+                print("STOPPED: torque off, exiting", file=sys.stderr)
                 break
 
             if reflex.mode is Mode.REFLEX:
                 hold = reflex.hold_targets(reflex_present)
                 joint.command(bus, hold[ref_id])  # 연속 관절 논리각 변환·듀얼 미러는 command()가 처리
-                print("  홀드 목표 전송.", file=sys.stderr)
+                print("  hold sent", file=sys.stderr)
                 action = wait_recover(reflex, refresh)
                 if action == "quit":
                     break
@@ -186,24 +186,24 @@ def main() -> None:
                 for trip in trips:
                     print("\n" + describe_trip(trip, [joint]), file=sys.stderr)
                 for w in reflex.warnings():
-                    print(f"  [경고] {w}", file=sys.stderr)
+                    print(f"  warn: {w}", file=sys.stderr)
                 if reflex.mode is Mode.STOPPED:
-                    print("STOPPED: 과열로 토크 해제 후 종료합니다.", file=sys.stderr)
+                    print("STOPPED (overtemp): torque off, exiting", file=sys.stderr)
                     break
 
             print(f"  t={now - start:5.2f}s  pos={present}  err={err:5d}")
 
             if abs(err) < 20:
-                print("목표 도달.")
+                print("reached")
                 break
             if now - start > args.timeout:
-                print("시간 초과.")
+                print("timeout")
                 break
             time.sleep(0.05)
     finally:
         bus.disable_torque(motor_ids)
         bus.disconnect()
-        print("토크 OFF.")
+        print("torque off")
 
 
 if __name__ == "__main__":

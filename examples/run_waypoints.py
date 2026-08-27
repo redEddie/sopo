@@ -45,25 +45,25 @@ def main() -> None:
     bus = FeetechBus(cfg["arm"]["port"], cfg["arm"].get("baudrate", 1_000_000))
     bus.connect()
     for w in verify_eprom(bus, limits, ids):
-        print(f"경고(EPROM 드리프트): {w} — cookbook/10_persist_caps.py 실행 권장", file=sys.stderr)
+        print(f"warn (EPROM drift): {w} -> run cookbook/10_persist_caps.py", file=sys.stderr)
     source.connect()
     try:
         apply_safety(bus, ids, limits)                      # 토크를 켜기 전 반드시
         caps = ", ".join(f"{i}:{limits.torque_for(i) / 10:.0f}%" for i in ids)
-        print(f"토크 캡 {caps} | 스텝 {limits.max_relative_target}틱 | 웨이포인트 {len(source.waypoints)}개")
+        print(f"torque caps {caps} | step {limits.max_relative_target} ticks | {len(source.waypoints)} waypoints")
         if any(j.__class__.__name__ == "ContinuousJoint" for j in joints):
-            print("주의: 연속 관절(J1)은 전선이 풀린 자세에서 시작해야 합니다 — 지금 자세가 허용 범위의 중심이 됩니다.")
+            print("note: continuous joint (J1) must start with the cable relaxed - current pose becomes range center")
         bus.enable_torque(ids)
         run_control_loop(bus, joints, limits, joint_limits, reflex, source,
                          rate_hz=args.rate or cfg.get("rate_hz", 50), verbose=args.verbose,
                          blackbox=Blackbox(ids, rate_hz=args.rate or cfg.get("rate_hz", 50)))
-        print("웨이포인트 완료.")
+        print("waypoints done")
     except KeyboardInterrupt:
-        print("\n종료 요청.")
+        print("\nquit requested")
     except RuntimeError as e:
-        print(f"\n중단: {e}", file=sys.stderr)
+        print(f"\nstopped: {e}", file=sys.stderr)
     finally:
-        print("토크를 해제합니다 — 암이 내려올 수 있으니 잡아주세요.")
+        print("torque off - support the arm, it may drop")
         bus.disconnect(disable_torque_ids=ids)
         source.disconnect()
 

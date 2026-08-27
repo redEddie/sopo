@@ -216,9 +216,9 @@ def test_recover():
     r.hold_targets({19: 1000})
 
     # High load -> cannot recover.
-    ok, reason = r.recover(present={19: 1000}, load={19: 80})
+    ok, reason = r.recover(present={19: 1000}, load={19: 140})  # >= 90% of cap 150
     assert ok is False
-    assert "load too high" in reason
+    assert "of cap" in reason
 
     # Low load but position drifted too far -> cannot recover.
     ok, reason = r.recover(present={19: 1100}, load={19: 10})
@@ -262,5 +262,5 @@ def test_pushed_away_from_goal_is_collision():
     trips = []
     for i in range(20):
         trips += r.update(now=i * 0.02, present={19: 2000 - 3 * i}, goal={19: 2000}, load={19: -150})
-    assert [t.event for t in trips] == [Event.COLLISION] and "밀림" in trips[0].detail
+    assert [t.event for t in trips] == [Event.COLLISION] and "pushed back" in trips[0].detail
 

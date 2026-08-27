@@ -99,29 +99,11 @@ def hold_joint_goals(joints: list[Joint], hold: dict[int, int]) -> dict[str, int
     return {j.name: hold[j.reference_id if isinstance(j, DualMotorJoint) else j.motor_ids[0]] for j in joints}
 
 
-EVENT_TEXT = {
-    Event.COLLISION: ("충돌/막힘", "허용 최대 힘(캡)으로 밀었지만 목표 쪽으로 거의 못 감",
-                      "사람·장애물이면 치우고 [r] 복구. 자유 이동 중에도 반복되면 캡이 부족한 것 — 캡을 올리거나 속도(스텝)를 낮추세요"),
-    Event.TRACKING_ERROR: ("추종 오차", "목표와 실측 위치 차이가 오래 큼",
-                           "캡 부족·걸림·모터 무응답 확인 후 [r] 복구"),
-    Event.PAIR_MISMATCH: ("듀얼 쌍 불일치", "두 모터 위치 합이 K에서 벗어남 — 쌍이 서로 싸우거나 한쪽이 미끄러짐",
-                          "토크 끄고 두 모터 케이블·혼 고정 확인, K 재측정"),
-    Event.JOINT_LIMIT: ("리밋 이탈", "측정 위치가 소프트 리밋 밖에 머묾 — 외력으로 밀렸거나 캡 부족으로 처짐",
-                        "손으로 범위 안으로 되돌린 뒤 [r] 복구"),
-    Event.COMM_LOSS: ("통신 두절", "버스 응답 연속 실패", "케이블·전원 확인 후 재시작 (토크 해제됨)"),
-    Event.OVERTEMP: ("과열", "모터 온도가 정지 임계값 초과", "식힌 뒤 재시작 (토크 해제됨)"),
-}
-
-
 def describe_trip(trip: Trip, joints: list[Joint]) -> str:
-    """리플렉스 이벤트를 관절 이름·종류·의미·조치로 풀어 쓴다."""
+    """One line: [REFLEX] KIND joint (ID): detail."""
     name_of = {mid: j.name for j in joints for mid in j.motor_ids}
-    where = f"{name_of.get(trip.motor_id, '?')} (ID {trip.motor_id})" if trip.motor_id is not None else "전체"
-    kind, meaning, action = EVENT_TEXT.get(trip.event, (trip.event.value, "", ""))
-    return (f"[리플렉스] {kind} — {where}\n"
-            f"   측정: {trip.detail}\n"
-            f"   의미: {meaning}\n"
-            f"   조치: {action}")
+    where = f"{name_of.get(trip.motor_id, '?')} (ID {trip.motor_id})" if trip.motor_id is not None else "all"
+    return f"[REFLEX] {trip.event.name} {where}: {trip.detail}"
 
 
 def prompt_recover(bus: FeetechBus, joints: list[Joint], reflex: Reflex) -> str:
@@ -129,7 +111,7 @@ def prompt_recover(bus: FeetechBus, joints: list[Joint], reflex: Reflex) -> str:
     ids = [mid for j in joints for mid in j.motor_ids]
     while reflex.mode is Mode.REFLEX:
         try:
-            key = input("리플렉스 발동. [r] 복구 시도, [q] 종료: ").strip().lower()
+            key = input("REFLEX latched. [r] recover / [q] quit: ").strip().lower()
         except (EOFError, KeyboardInterrupt):
             return "quit"
         if key == "q":
@@ -140,9 +122,9 @@ def prompt_recover(bus: FeetechBus, joints: list[Joint], reflex: Reflex) -> str:
             load = bus.sync_read("Present_Load", ids)
             ok, reason = reflex.recover(present, load)
             if ok:
-                print("복구 성공. 재개합니다 (소프트스타트).")
+                print("recovered, resuming (soft start)")
                 return "continue"
-            print(f"복구 불가: {reason}")
+            print(f"recover refused: {reason}")
     return "continue"
 
 
@@ -200,7 +182,7 @@ def run_control_loop(
     first = read_joints(bus, joints)
     for n, (lo, hi) in joint_limits.items():
         if not lo <= first[n] <= hi:
-            print(f"안내: {n} 현재 {first[n]}이 소프트 리밋 [{lo}, {hi}] 밖 (토크 OFF 중 기계 끝에 놓임) — 소프트스타트로 되돌립니다.")
+            print(f"note: {n} at {first[n]} is outside soft limit [{lo}, {hi}] (parked past the end), soft start brings it back")
 
     while not source.is_done():
         t0 = time.monotonic()
@@ -215,15 +197,15 @@ def run_control_loop(
             for n, (lo, hi) in joint_limits.items():
                 if n in action and not lo <= action[n] <= hi and n not in warned_limit:
                     warned_limit.add(n)
-                    print(f"경고: {n} 목표 {action[n]}이 소프트 리밋 [{lo}, {hi}] 밖 — 리밋에서 잘립니다 (이벤트 아님)", file=sys.stderr)
+                    print(f"warn: {n} goal {action[n]} outside soft limit [{lo}, {hi}], clamped", file=sys.stderr)
             command_joints(bus, joints, goal)
             if soft and all(abs(action[n] - present[n]) < ARRIVAL_TICKS for n in action):
                 soft = False
-                print("소프트스타트 완료.")
+                print("soft start done")
             rp = reflex_present_view(bus, joints, present)
         except ConnectionError as e:
             comm_ok = False
-            print(f"통신 오류: {e}", file=sys.stderr)
+            print(f"comm error: {e}", file=sys.stderr)
 
         temps = None
         if t0 - last_temp > 2.0 and comm_ok:
@@ -237,23 +219,23 @@ def run_control_loop(
             for trip in trips:
                 print("\n" + describe_trip(trip, joints), file=sys.stderr)
             for w in reflex.warnings():
-                print(f"경고: {w}", file=sys.stderr)
+                print(f"warn: {w}", file=sys.stderr)
             if blackbox:
                 blackbox.record(t0, reflex.mode.value, rp, mg, load, ";".join(t.event.value for t in trips))
 
         if reflex.mode is Mode.STOPPED:
             if blackbox:
-                print(f"블랙박스 저장: {blackbox.dump('stopped')}", file=sys.stderr)
-            raise RuntimeError("STOPPED: 통신 두절/과열로 안전을 위해 중단합니다.")
+                print(f"blackbox saved: {blackbox.dump('stopped')}", file=sys.stderr)
+            raise RuntimeError("STOPPED (comm loss / overtemp): torque off")
 
         if reflex.mode is Mode.REFLEX:
             hold = reflex.hold_targets(rp)
             command_joints(bus, joints, hold_joint_goals(joints, hold))  # 논리각·듀얼 변환은 command()가
-            print("홀드 목표 전송.", file=sys.stderr)
+            print("hold sent", file=sys.stderr)
             if blackbox and trips:
-                print(f"블랙박스 저장: {blackbox.dump('reflex')}", file=sys.stderr)
+                print(f"blackbox saved: {blackbox.dump('reflex')}", file=sys.stderr)
             if on_reflex(bus, joints, reflex) == "quit":
-                raise RuntimeError("사용자가 리플렉스 상태에서 종료했습니다.")
+                raise RuntimeError("aborted by user in REFLEX")
             soft = True
             continue
 
