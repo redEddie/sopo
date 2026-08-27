@@ -56,9 +56,9 @@ def main() -> None:
             if not s:
                 continue
             if s["mode"] == "reflex":
-                print(f"REFLEX after {time.monotonic() - t0:.1f}s: {s['trips'][-1] if s['trips'] else ''}\n-> `python -m sopo.cli recover`"); sys.exit(2)
+                print(f"\nREFLEX after {time.monotonic() - t0:.1f}s: {s['trips'][-1] if s['trips'] else ''}\n-> `python -m sopo.cli recover`"); sys.exit(2)
             if s["mode"] != "move":
-                print(f"mode changed to {s['mode']}"); sys.exit(2)
+                print(f"\nmode changed to {s['mode']}"); sys.exit(2)
             err = {n: s["joints"][n]["pos"] - v for n, v in target.items() if s["joints"][n]["pos"] is not None}
             print("\r" + "  ".join(f"{n}:{s['joints'][n]['pos']}->{v} ({e:+d})" for (n, v), e in zip(target.items(), err.values())).ljust(100), end="", flush=True)
             if all(abs(e) <= 30 for e in err.values()):
