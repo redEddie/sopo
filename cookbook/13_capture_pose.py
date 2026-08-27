@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import argparse
 
 from sopo import FeetechBus
-from sopo.config import all_motor_ids, load_arm_config, make_joints
+from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints
 from sopo.control import read_joints
 from sopo.joints import ContinuousJoint
 
@@ -41,11 +41,19 @@ def main() -> None:
     finally:
         bus.disconnect()
 
+    joint_limits = make_joint_limits(cfg, joints)
     pose = {}
     for j in joints:
         v = pos[j.name]
         if isinstance(j, ContinuousJoint) and j.home_abs is not None:
             v -= j.home - j.home_abs  # home_abs 프레임으로
+            bounds = (j.home_abs - (j.range_ticks or 2048), j.home_abs + (j.range_ticks or 2048))
+        else:
+            bounds = joint_limits.get(j.name)
+        if bounds and not bounds[0] <= v <= bounds[1]:
+            clamped = max(bounds[0], min(bounds[1], v))
+            print(f"warn: {j.name} = {int(v)} is outside soft limit {bounds} (arm resting on its stop?) -> stored {clamped}", file=sys.stderr)
+            v = clamped
         pose[j.name] = int(v)
     line = f"{args.key}: {{" + ", ".join(f"{k}: {v}" for k, v in pose.items()) + "}"
     print(line)
