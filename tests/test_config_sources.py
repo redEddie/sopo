@@ -125,3 +125,12 @@ def test_reflex_joint_limit_for_continuous_range():
         trips += r.update(now=0.3 * k, present={1: 4200}, goal={1: 4096}, load={1: 0})
     assert [t.event for t in trips] == [Event.JOINT_LIMIT] and r.mode is Mode.REFLEX
 
+
+def test_stream_source_stale_hold_is_latched_not_tracking():
+    from sopo.sources import StreamSource
+    s = StreamSource(watchdog_s=0.5)
+    s.push({"J4": 2300}, 0.0)
+    assert s.get_action({"J4": 2100}, 0.1) == {"J4": 2300}
+    assert s.get_action({"J4": 2250}, 1.0) == {"J4": 2250}   # stale: latch the position at that moment
+    assert s.get_action({"J4": 2400}, 1.5) == {"J4": 2250}   # pushed by hand: goal stays -> arm resists
+

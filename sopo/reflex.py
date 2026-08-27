@@ -29,6 +29,7 @@ class Event(Enum):
     COMM_LOSS = "comm_loss"
     OVERTEMP = "overtemp"
     JOINT_LIMIT = "joint_limit"  # 측정 위치가 소프트 리밋 밖 (libfranka joint_position_limits_violation)
+    DISTURBANCE = "disturbance"  # 정지 명령 중 위치가 흔들림 = 외력 (모델 없이 잡는 "잡혀서 흔들림")
 
 
 @dataclass
@@ -40,6 +41,8 @@ class ReflexConfig:
     t_accel: float = 0.2
     err_ticks: int = 150
     t_error: float = 0.5
+    disturb_pp: int = 40    # goal static 동안 0.5s 창의 위치 peak-to-peak가 이 이상이면 DISTURBANCE
+    t_disturb: float = 0.5
     pair_tol: int = 60   # measured: free +-6, both motors saturated by a grab up to +21; a real fight is hundreds
     t_pair: float = 0.3  # must persist (gear deflection under load is transient)
     comm_fail_max: int = 5
@@ -71,6 +74,7 @@ class _MotorState:
         self.accel_until: float = 0.0
         self.last_goal: int | None = None
         self.limit_armed: bool = False   # 범위 안에 한 번 들어온 뒤에만 리밋 감시
+        self.hold_win: list = []          # (t, pos) while the goal is static
         self.limit_start: float | None = None
 
 
@@ -201,8 +205,9 @@ class Reflex:
             load_abs = abs(load_val)
 
             # Acceleration deferral: big goal jump suspends collision detection.
-            if state.last_goal is not None:
-                if abs(tgt - state.last_goal) >= self._cfg.accel_step:
+            prev_goal = state.last_goal
+            if prev_goal is not None:
+                if abs(tgt - prev_goal) >= self._cfg.accel_step:
                     state.accel_until = now + self._cfg.t_accel
             state.last_goal = tgt
 
@@ -237,6 +242,21 @@ class Reflex:
                 else:
                     state.sat_start = None
                     state.pos_at_sat = None
+
+            # DISTURBANCE: commanded to hold (goal static) but the position swings -> external force.
+            # Commanded motion clears the window, so this never fires while the arm is being driven;
+            # steady gravity sag has no swing, so it does not fire either.
+            if prev_goal is not None and abs(tgt - prev_goal) <= 2:
+                state.hold_win.append((now, pos))
+                state.hold_win = [(t, q) for t, q in state.hold_win if now - t <= self._cfg.t_disturb]
+                if state.hold_win[-1][0] - state.hold_win[0][0] >= 0.8 * self._cfg.t_disturb:
+                    qs = [q for _, q in state.hold_win]
+                    pp = max(qs) - min(qs)
+                    if pp >= self._cfg.disturb_pp:
+                        trip = Trip(Event.DISTURBANCE, motor_id, f"holding at {tgt} but position swung {pp} ticks in {self._cfg.t_disturb}s (external force)")
+                        new_trips.extend(self._emit(trip))
+            else:
+                state.hold_win = []
 
             # TRACKING_ERROR detection.
             if err > self._cfg.err_ticks:
@@ -352,6 +372,7 @@ class Reflex:
             state.pos_at_sat = None
             state.err_start = None
             state.limit_start = None
+            state.hold_win = []
         self._pair_start.clear()
         return True, ""
 

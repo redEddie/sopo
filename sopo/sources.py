@@ -178,6 +178,7 @@ class StreamSource:
         self._last_push = -1e9
         self._sticky = False
         self.stale = True
+        self._hold: dict[str, int] | None = None
 
     def push(self, action: dict[str, int], now: float, sticky: bool = False) -> None:
         """sticky=True: 다음 push까지 워치독 없이 유지 (goto 같은 단발 목표)."""
@@ -192,9 +193,16 @@ class StreamSource:
         pass
 
     def get_action(self, present: dict[str, int], now: float) -> dict[str, int]:
-        self.stale = self._action is None or (not self._sticky and (now - self._last_push) > self.watchdog_s)
-        if self.stale:
-            return dict(present)  # 홀드
+        stale = self._action is None or (not self._sticky and (now - self._last_push) > self.watchdog_s)
+        if stale:
+            # 홀드: 진입 순간의 위치를 목표로 고정한다. 매 사이클 present를 따라가면 밀리는 대로
+            # 끌려가서 저항도 못 하고 외력 감지(DISTURBANCE)도 안 된다.
+            if not self.stale or self._hold is None:
+                self._hold = dict(present)
+            self.stale = True
+            return {n: self._hold.get(n, present[n]) for n in present}
+        self.stale = False
+        self._hold = None
         return {n: self._action.get(n, present[n]) for n in present}
 
     def is_done(self) -> bool:

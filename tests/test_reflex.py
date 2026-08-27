@@ -189,7 +189,7 @@ def test_joint_limit_arms_after_entering_range_and_needs_dwell():
     Once inside, being pushed out past the margin for > t_limit -> JOINT_LIMIT."""
     from sopo import SafetyLimits
     lim = SafetyLimits(position_limits={19: (220, 3969)}, torque_limits={19: 150})
-    r = Reflex(lim, {}, ReflexConfig(limit_margin=30, t_limit=0.5))
+    r = Reflex(lim, {}, ReflexConfig(limit_margin=30, t_limit=0.5, disturb_pp=10_000))  # isolate the limit rule
     assert r.update(now=0.0, present={19: 4020}, goal={19: 3969}, load={19: 60}) == []   # 밖에서 시작 → 무장 전
     assert r.update(now=0.3, present={19: 4020}, goal={19: 3969}, load={19: 60}) == []
     r.update(now=0.6, present={19: 3960}, goal={19: 3969}, load={19: 20})                 # 안으로 들어옴 → 무장
@@ -216,4 +216,21 @@ def test_pushed_away_from_goal_is_collision():
     for i in range(20):
         trips += r.update(now=i * 0.02, present={19: 2000 - 3 * i}, goal={19: 2000}, load={19: -150})
     assert [t.event for t in trips] == [Event.COLLISION] and "pushed back" in trips[0].detail
+
+
+def test_disturbance_when_shaken_while_holding():
+    """Goal static, position swings +-40 -> DISTURBANCE. Steady sag or commanded motion -> nothing."""
+    import math
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(disturb_pp=40, t_disturb=0.5))
+    trips = []
+    for i in range(40):                                  # 0.8 s, shaken +-30 around the goal
+        pos = 2000 + int(30 * math.sin(i * 0.8))
+        trips += r.update(now=i * 0.02, present={19: pos}, goal={19: 2000}, load={19: 60})
+    assert [t.event for t in trips] == [Event.DISTURBANCE]
+
+    r2 = Reflex(LIMITS, PAIRS, ReflexConfig())
+    for i in range(40):                                  # steady 15-tick gravity sag: no swing
+        assert r2.update(now=i * 0.02, present={19: 1985}, goal={19: 2000}, load={19: 60}) == []
+    for i in range(40):                                  # commanded motion: goal moves, window cleared
+        assert r2.update(now=1.0 + i * 0.02, present={19: 2000 + 40 * i}, goal={19: 2080 + 40 * i}, load={19: 120}) == []
 
