@@ -102,10 +102,14 @@ class ContinuousJoint:
     needs the firmware multi-turn mode (issue #8).
     """
 
-    def __init__(self, name: str, motor_id: int, range_ticks: int | None = None):
+    def __init__(self, name: str, motor_id: int, range_ticks: int | None = None, firmware_multiturn: bool = False):
         self.name = name
         self.motor_id = motor_id
         self.range_ticks = range_ticks
+        # True: servo runs with Phase bit4 set and Min/Max_Position_Limit 0/0 -> it reports and accepts
+        # multi-turn positions itself, so goals are written as-is (no mod 4096). Software turn
+        # counting stays harmless (deltas never exceed half a turn).
+        self.firmware_multiturn = firmware_multiturn
         self.turn_count = 0
         self.home: int | None = None
         self._last_raw: int | None = None
@@ -156,6 +160,9 @@ class ContinuousJoint:
         target = current + move
         # Do NOT touch turn_count here - it tracks the *present* position and is
         # updated by read() when the motor actually crosses the wrap.
+        if self.firmware_multiturn:
+            bus.write("Goal_Position", self.motor_id, target)  # firmware counts turns; +/-32767 ticks (sign-magnitude)
+            return
         raw_goal = target - math.floor(target / TICKS_PER_REV) * TICKS_PER_REV
         bus.write("Goal_Position", self.motor_id, raw_goal)
 
@@ -177,7 +184,7 @@ def build_joints(configs: list[dict]) -> list[Joint]:
             ids = tuple(cfg["ids"])
             joints.append(DualMotorJoint(name, ids, cfg["reference_id"], cfg["K"]))
         elif jtype == "continuous":
-            joints.append(ContinuousJoint(name, cfg["motor_id"], cfg.get("range_ticks")))
+            joints.append(ContinuousJoint(name, cfg["motor_id"], cfg.get("range_ticks"), bool(cfg.get("firmware_multiturn", False))))
         else:
             raise ValueError(f"Unknown joint type: {jtype}")
     return joints
