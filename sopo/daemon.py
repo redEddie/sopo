@@ -85,9 +85,17 @@ class Daemon:
         self.bus.connect()
         for w in verify_eprom(self.bus, self.limits, self.ids):
             self._log(f"warn (EPROM drift): {w}")
-        self.bus.torque_off_verified(self.ids)
         read_joints(self.bus, self.joints)  # establishes home for continuous joints
         self.reflex = self._new_reflex()
+        # Never touch torque at start: a previous session may have left the arm holding (Cat 2, #10).
+        try:
+            on = [i for i, v in self.bus.sync_read("Torque_Enable", self.ids).items() if v]
+        except Exception:
+            on = []
+        if on:
+            self.mode = ArmMode.REFLEX
+            self.last_trips = ["[REFLEX] INHERITED_HOLD: torque was on at daemon start"]
+            self._log(f"torque already on for {on}: adopting as a held arm (REFLEX). 'recover' to move, 'idle' to release")
         for j in self.joints:
             if isinstance(j, ContinuousJoint):
                 self._log(f"{j.name}: home {j.home} (abs {j.home_abs}), range {j.range_bounds()}")
@@ -303,12 +311,12 @@ class Daemon:
             return {"ok": False, "error": f"control lease held by '{self.lease['name']}' - release it first"}
         # Latched errors must be acknowledged: only 'recover' leads back to MOVE (Franka: automaticErrorRecovery).
         # Dropping torque (idle/guiding) is always allowed.
-        if self.mode is ArmMode.REFLEX and cmd in ("move", "torque_on", "init", "goto"):
+        if self.mode in (ArmMode.REFLEX, ArmMode.STOPPED) and cmd in ("move", "torque_on", "init", "goto", "acquire"):
             why = self.last_trips[-1] if self.last_trips else "reflex"
             return {"ok": False, "error": f"REFLEX latched ({why}) - run 'recover' first, or 'idle' to drop torque"}
         if cmd in ("move", "torque_on"):
             if self.mode is ArmMode.STOPPED:
-                return {"ok": False, "error": "STOPPED: restart the daemon"}
+                return {"ok": False, "error": "STOPPED: run 'recover' (after the cause is cleared) or 'idle'"}
             self._enter_move(); return {"ok": True, "mode": self.mode.value}
         if cmd in ("idle", "torque_off", "guiding"):
             self._set_torque(False)
@@ -316,8 +324,11 @@ class Daemon:
             self._revoke(cmd); self.stream.clear()
             return {"ok": True, "mode": self.mode.value}
         if cmd == "recover":
-            if self.mode is not ArmMode.REFLEX:
-                return {"ok": False, "error": f"not in REFLEX (mode {self.mode.value})"}
+            if self.mode not in (ArmMode.REFLEX, ArmMode.STOPPED):
+                return {"ok": False, "error": f"not in REFLEX/STOPPED (mode {self.mode.value})"}
+            hot = {i: t for i, t in self.temps.items() if t >= self.reflex._cfg.temp_warn}
+            if hot:
+                return {"ok": False, "error": f"still hot: {hot} (let it cool below {self.reflex._cfg.temp_warn}°C)"}
             if self.reflex.mode is ReflexMode.REFLEX:
                 ok, reason = self.reflex.recover(self.rp, self.load)
                 if not ok:

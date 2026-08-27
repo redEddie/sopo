@@ -45,6 +45,8 @@ class ReflexConfig:
     comm_fail_max: int = 5
     temp_warn: int = 65
     temp_stop: int = 70
+    temp_confirm: int = 2       # consecutive readings >= temp_stop before OVERTEMP (a garbled packet must not stop the arm)
+    temp_plausible: int = 100   # readings outside 0..this are ignored as bus garbage
     backoff_ticks: int = 0
     recover_load_ratio: float = 0.9  # recover() allowed while hold load < this * cap (gravity load is not external force)
     limit_margin: int = 30  # 소프트 리밋을 이만큼 넘어야 JOINT_LIMIT (클램프 자체는 이벤트 아님)
@@ -111,6 +113,7 @@ class Reflex:
         self._last_load: dict[int, int] = {}
         self._extra_limits: dict[int, tuple[int, int]] = {}  # continuous joints: home +/- range (logical frame)
         self._pair_start: dict[str, float] = {}
+        self._temp_over: dict[int, int] = {}
 
     @property
     def mode(self) -> Mode:
@@ -150,20 +153,25 @@ class Reflex:
         else:
             self._comm_fail_count = 0
 
-        # Temperature checks.
+        # Temperature checks: implausible values are bus garbage (one shifted byte can put a position
+        # byte in the temperature slot); a real thermal event persists, so require temp_confirm samples.
         if temps:
             for motor_id, temp in temps.items():
+                if not 0 <= temp <= self._cfg.temp_plausible:
+                    self._warnings.append(f"motor {motor_id} implausible temp {temp}°C ignored (bus garbage?)")
+                    continue
                 if temp >= self._cfg.temp_stop:
-                    trip = Trip(
-                        Event.OVERTEMP,
-                        motor_id,
-                        f"temp {temp}°C >= stop {self._cfg.temp_stop}°C",
-                    )
-                    new_trips.extend(self._emit(trip))
-                elif temp >= self._cfg.temp_warn:
-                    self._warnings.append(
-                        f"motor {motor_id} temp {temp}°C >= warn {self._cfg.temp_warn}°C"
-                    )
+                    n = self._temp_over.get(motor_id, 0) + 1
+                    self._temp_over[motor_id] = n
+                    if n >= self._cfg.temp_confirm:
+                        trip = Trip(Event.OVERTEMP, motor_id, f"temp {temp}°C >= stop {self._cfg.temp_stop}°C ({n} readings)")
+                        new_trips.extend(self._emit(trip))
+                    else:
+                        self._warnings.append(f"motor {motor_id} temp {temp}°C >= stop, confirming ({n}/{self._cfg.temp_confirm})")
+                else:
+                    self._temp_over[motor_id] = 0
+                    if temp >= self._cfg.temp_warn:
+                        self._warnings.append(f"motor {motor_id} temp {temp}°C >= warn {self._cfg.temp_warn}°C")
 
         # Once STOPPED, nothing else matters.
         if self._mode is Mode.STOPPED:

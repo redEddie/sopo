@@ -190,3 +190,21 @@ def test_daemon_exit_holds_torque(monkeypatch):
     c.command("shutdown"); t.join(timeout=3)
     assert d.bus.torque[19] == 1 and d.bus.regs[(19, "Torque_Limit")] == 600  # holds, stiff
 
+
+def test_daemon_adopts_held_arm_at_start(monkeypatch):
+    class HeldBus(FakeBus):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            self.torque = {i: 1 for i in self.torque}   # previous session left the arm holding
+    monkeypatch.setattr(daemon_mod, "FeetechBus", HeldBus)
+    ports = {"state": 6575, "cmd": 6576, "action": 6577}
+    d = daemon_mod.Daemon(CFG, ports)
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    s = c.state(1.0)
+    assert s["mode"] == "reflex" and d.bus.torque[19] == 1        # not dropped
+    assert c.command("move")["ok"] is False
+    assert c.command("recover")["ok"] and d.mode.value == "move"
+    c.command("shutdown"); t.join(timeout=3)
+

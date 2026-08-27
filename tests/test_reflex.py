@@ -135,56 +135,24 @@ def test_pair_mismatch():
 
 
 def test_comm_loss_and_overtemp():
-    """Scenario 7: repeated comm failures and over-temperature enter STOPPED."""
-    cfg = ReflexConfig(comm_fail_max=5, temp_warn=65, temp_stop=70)
-    r = Reflex(LIMITS, PAIRS, cfg)
+    """Scenario 7: 5 comm failures -> STOPPED; overtemp needs 2 confirming readings; garbage (150) is ignored."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(comm_fail_max=5))
+    trips = []
+    for k in range(5):
+        trips += r.update(now=0.02 * k, present={19: 1000}, goal={19: 1000}, load={19: 0}, comm_ok=False)
+    assert [t.event for t in trips] == [Event.COMM_LOSS] and r.mode is Mode.STOPPED
 
-    # Comm failure must reach comm_fail_max.
-    for i in range(1, 5):
-        trips = r.update(
-            now=i * 0.05,
-            present={19: 1000},
-            goal={19: 1000},
-            load={19: 0},
-            comm_ok=False,
-        )
-        assert trips == []
-    trips = r.update(
-        now=0.30,
-        present={19: 1000},
-        goal={19: 1000},
-        load={19: 0},
-        comm_ok=False,
-    )
-    assert len(trips) == 1
-    assert trips[0].event is Event.COMM_LOSS
-    assert r.mode is Mode.STOPPED
+    r2 = Reflex(LIMITS, PAIRS, ReflexConfig(temp_confirm=2))
+    assert r2.update(now=0.0, present={19: 1000}, goal={19: 1000}, load={19: 0}, temps={19: 150}) == []   # garbage
+    assert any("implausible" in w for w in r2.warnings()) and r2.mode is Mode.MOVE
+    assert r2.update(now=2.0, present={19: 1000}, goal={19: 1000}, load={19: 0}, temps={19: 71}) == []    # 1/2
+    assert any("confirming" in w for w in r2.warnings())
+    trips = r2.update(now=4.0, present={19: 1000}, goal={19: 1000}, load={19: 0}, temps={19: 72})         # 2/2
+    assert [t.event for t in trips] == [Event.OVERTEMP] and r2.mode is Mode.STOPPED
 
-    # Overtemp.
-    r2 = Reflex(LIMITS, PAIRS, cfg)
-    trips = r2.update(
-        now=0.0,
-        present={19: 1000},
-        goal={19: 1000},
-        load={19: 0},
-        temps={19: 71},
-    )
-    assert len(trips) == 1
-    assert trips[0].event is Event.OVERTEMP
-    assert r2.mode is Mode.STOPPED
-
-    # Warning only.
-    r3 = Reflex(LIMITS, PAIRS, cfg)
-    trips = r3.update(
-        now=0.0,
-        present={19: 1000},
-        goal={19: 1000},
-        load={19: 0},
-        temps={19: 66},
-    )
-    assert trips == []
-    assert r3.warnings() == ["motor 19 temp 66°C >= warn 65°C"]
-    assert r3.mode is Mode.MOVE
+    r3 = Reflex(LIMITS, PAIRS, ReflexConfig())
+    assert r3.update(now=0.0, present={19: 1000}, goal={19: 1000}, load={19: 0}, temps={19: 66}) == []
+    assert r3.warnings() == ["motor 19 temp 66°C >= warn 65°C"] and r3.mode is Mode.MOVE
 
 
 def test_recover():
