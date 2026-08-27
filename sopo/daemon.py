@@ -189,7 +189,8 @@ class Daemon:
                     except Exception as e:
                         self._log(f"hold send failed: {e}")
                     self.mode = ArmMode.REFLEX
-                    self._log(f"REFLEX latched - hold sent. blackbox: {self.blackbox.dump('reflex')}. send 'recover' to resume")
+                    why = self.last_trips[-1].replace("[REFLEX] ", "") if self.last_trips else "?"
+                    self._log(f"REFLEX latched ({why}) - hold sent. blackbox: {self.blackbox.dump('reflex')}. send 'recover' to resume")
 
             elapsed = time.monotonic() - t0
             self.cycle_times.append(elapsed)
@@ -269,8 +270,20 @@ class Daemon:
                 return {"ok": False, "error": f"unknown joints {sorted(unknown)}"}
             if self.mode is not ArmMode.MOVE:
                 return {"ok": False, "error": f"goto needs MOVE mode (now {self.mode.value}); send 'move' first"}
-            self.stream.push(target, time.monotonic(), sticky=True)
-            return {"ok": True}
+            by_name = {j.name: j for j in self.joints}
+            clamped, notes = {}, {}
+            for name, v in target.items():
+                j = by_name[name]
+                if isinstance(j, ContinuousJoint):
+                    cv = j.clamp(int(v))
+                else:
+                    lo, hi = self.joint_limits.get(name, (0, 4095))
+                    cv = max(lo, min(hi, int(v)))
+                clamped[name] = cv
+                if cv != int(v):
+                    notes[name] = f"{v} -> {cv} (soft limit)"
+            self.stream.push(clamped, time.monotonic(), sticky=True)
+            return {"ok": True, "accepted": clamped, "clamped": notes, "note": "accepted, not yet reached - watch state"}
         if cmd == "init":
             if self.mode is ArmMode.STOPPED:
                 return {"ok": False, "error": "STOPPED"}
