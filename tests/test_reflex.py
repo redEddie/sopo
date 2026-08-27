@@ -244,3 +244,23 @@ def test_joint_limit_arms_after_entering_range_and_needs_dwell():
     assert r.update(now=1.3, present={19: 4005}, goal={19: 3969}, load={19: 20}) == []
     trips = r.update(now=1.6, present={19: 4005}, goal={19: 3969}, load={19: 20})
     assert [t.event for t in trips] == [Event.JOINT_LIMIT] and r.mode is Mode.REFLEX
+
+
+def test_free_motion_with_running_goal_is_not_collision():
+    """Jog/waypoint: goal stays 80 ticks ahead, joint moves 40/cycle at the cap -> no trip (was a false positive)."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(t_collision=0.3, progress_ticks=40))
+    trips = []
+    for i in range(30):
+        pos = 2000 + 40 * i
+        trips += r.update(now=i * 0.02, present={19: pos}, goal={19: pos + 80}, load={19: 150})
+    assert trips == [] and r.mode is Mode.MOVE
+
+
+def test_pushed_away_from_goal_is_collision():
+    """Hand pushes the joint away from its goal while the motor saturates -> trip (moved negative)."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(t_collision=0.3, progress_ticks=40))
+    trips = []
+    for i in range(20):
+        trips += r.update(now=i * 0.02, present={19: 2000 - 3 * i}, goal={19: 2000}, load={19: -150})
+    assert [t.event for t in trips] == [Event.COLLISION] and "밀림" in trips[0].detail
+
