@@ -85,6 +85,8 @@ Franka Research 3의 안전 계층을 sopo 수준에서 재현:
 - #6 레이트 리미터 (속도/가속 프로파일) — https://github.com/redEddie/sopo/issues/6
 - #7 캡·리밋 EPROM 영구화 — https://github.com/redEddie/sopo/issues/7
 - #8 J1 펌웨어 멀티턴 모드 시험 — https://github.com/redEddie/sopo/issues/8
+- #11 sopo desk (브라우저 GUI, 데몬 클라이언트) — https://github.com/redEddie/sopo/issues/11
+- #12 통신 추상화 + Zenoh (Go2 DDS/ROS 2 브리지) — https://github.com/redEddie/sopo/issues/12
 - #9 SopoRobot + lerobot 어댑터 — https://github.com/redEddie/sopo/issues/9
 
 ## 흔들림 측정 (2026-08-28, `16_wobble_test --move J2:+300,J3:-300`)
