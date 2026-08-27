@@ -108,6 +108,7 @@ class Reflex:
         self._last_hold_target: dict[int, int] = {}
         self._last_collision: Trip | None = None
         self._last_load: dict[int, int] = {}
+        self._extra_limits: dict[int, tuple[int, int]] = {}  # continuous joints: home +/- range (logical frame)
 
     @property
     def mode(self) -> Mode:
@@ -246,7 +247,7 @@ class Reflex:
         # 그리고 t_limit 이상 밖에 머물 때만 판정한다 (되돌아오는 중이면 이벤트 아님).
         # 캘리브레이션된(position_limits에 있는) 모터만 — 연속 관절(J1)은 논리각이라 제외.
         if self._mode is not Mode.REFLEX:
-            for motor_id, (lo, hi) in self._limits.position_limits.items():
+            for motor_id, (lo, hi) in {**self._limits.position_limits, **self._extra_limits}.items():
                 pos = present.get(motor_id)
                 if pos is None:
                     continue
@@ -280,6 +281,10 @@ class Reflex:
                     new_trips.extend(self._emit(trip))
 
         return new_trips
+
+    def set_limit(self, motor_id: int, lo: int, hi: int) -> None:
+        """Register a range for JOINT_LIMIT (used for continuous joints once home is known)."""
+        self._extra_limits[motor_id] = (lo, hi)
 
     def hold_targets(self, present: dict[int, int]) -> dict[int, int]:
         """Return motor goals that hold the arm at the measured position.

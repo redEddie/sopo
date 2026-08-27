@@ -7,7 +7,7 @@
 | J1 | 1 | sm8512bl | Return_Delay_Time 250→0 (sync_read 수정). **펌웨어 멀티턴 모드로 운용**: Phase bit4 ON, Min/Max_Position_Limit 0/0, Homing_Offset −1988 (2026-08-28 확정, +415° 연속 판독·조그 통과 확인). 단일턴 모드는 4095/0에서 긴 길로 돌아 ±5° 떨림 |
 | J2 | 10, 11 | sts3250 ×2 | 듀얼, 반전 장착. 실측 pos10+pos11 ≈ **4005** (4095 아님 — 관절 추상화에서 상수로 보정) |
 | J3 | 15, 16 | sts3250 ×2 | 듀얼, 반전 장착. 실측 pos15+pos16 ≈ **4100** |
-| J4 | 19 | sts3250 | |
+| J4 | 19 | sts3250 | **연속 관절로 전환(2026-08-28)**: 12_continuous_setup --center 후 멀티턴, ±180° 케이블 보호. 하드웨어 설정은 사용자 실행 필요 |
 | J5 | 20 | sts3215 | 2026-08-25 오후 장착 |
 | J6 | 21 | sts3215 | 2026-08-25 오후 장착 (초기 스캔 때는 J5로 오인) |
 | J7(그리퍼) | - | - | 미장착 |
@@ -31,7 +31,8 @@
 - [ ] 관절별 소프트 리밋 실측 (`05_find_limits.py`) — 완료: J4. 남음: J1, J2, J3, J5, J6
 - [ ] 자중 토크 실측 (`06_gravity_load.py`) — J1/J5/J6은 J6 장착 후 측정, **J2/J3/J4는 J5·J6 장착 전 값이라 재측정 필요**
 - [ ] 다관절 웨이포인트 주행 하드웨어 검증 (`examples/run_waypoints.py`) — 리더 암 없음, 소스는 ActionSource로 교체 가능
-- [ ] 키보드 조그 하드웨어 검증 (`examples/jog.py`)
+- [x] 키보드 조그 하드웨어 검증 (`examples/jog.py`) — J1 360° 통과 확인
+- [ ] 초기화 루틴 검증 (`examples/init.py`: 자가진단 → standby_pose) — standby_pose는 jog로 읽어 arm.yaml에 기입
 - [ ] 리플렉스 하드웨어 튜닝 (`docs/reflex-spec.md` 8절) — 블랙박스 CSV(`logs/`)로 근거 남기기
 
 ## 2. Robot API/SDK (Franka의 libfranka 포지션)

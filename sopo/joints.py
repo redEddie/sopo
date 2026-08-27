@@ -104,10 +104,15 @@ class ContinuousJoint:
         The turn count resets at power-on, so the start pose is still the range centre.
     """
 
-    def __init__(self, name: str, motor_id: int, range_ticks: int | None = None, firmware_multiturn: bool = False):
+    def __init__(self, name: str, motor_id: int, range_ticks: int | None = None, firmware_multiturn: bool = False,
+                 home_abs: int | None = None):
         self.name = name
         self.motor_id = motor_id
         self.range_ticks = range_ticks
+        # Absolute single-turn reading of the cable-relaxed pose (set with cookbook/09 --center, usually 2048).
+        # The encoder is absolute within a turn, so home = the copy of home_abs nearest to the first reading.
+        # Only the turn count is unknown at power-on; with range_ticks <= 2048 that choice is unique.
+        self.home_abs = home_abs
         # True: servo runs with Phase bit4 set and Min/Max_Position_Limit 0/0 -> it reports and accepts
         # multi-turn positions itself, so goals are written as-is (no mod 4096). Software turn
         # counting stays harmless (deltas never exceed half a turn).
@@ -148,7 +153,10 @@ class ContinuousJoint:
         self._update_turn(raw)
         logical = raw + self.turn_count * TICKS_PER_REV
         if self.home is None:
-            self.home = logical
+            if self.home_abs is None:
+                self.home = logical
+            else:
+                self.home = self.home_abs + round((logical - self.home_abs) / TICKS_PER_REV) * TICKS_PER_REV
         return logical
 
     def command(self, bus: FeetechBus, logical_goal: int) -> None:
@@ -186,7 +194,8 @@ def build_joints(configs: list[dict]) -> list[Joint]:
             ids = tuple(cfg["ids"])
             joints.append(DualMotorJoint(name, ids, cfg["reference_id"], cfg["K"]))
         elif jtype == "continuous":
-            joints.append(ContinuousJoint(name, cfg["motor_id"], cfg.get("range_ticks"), bool(cfg.get("firmware_multiturn", False))))
+            joints.append(ContinuousJoint(name, cfg["motor_id"], cfg.get("range_ticks"), bool(cfg.get("firmware_multiturn", False)),
+                                          cfg.get("home_abs")))
         else:
             raise ValueError(f"Unknown joint type: {jtype}")
     return joints

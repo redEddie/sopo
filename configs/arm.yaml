@@ -16,8 +16,9 @@ joints:
   - name: J1
     type: continuous
     motor_id: 1
-    range_ticks: 4096   # ±360° (software clamp around the start pose). raise once the cable limit is measured
-    firmware_multiturn: true   # Phase bit4 ON + Min/Max_Position_Limit 0/0 on the servo: it crosses 4095/0 itself
+    range_ticks: 2048          # +-180 deg around home: cable protection (silent clamp + JOINT_LIMIT reflex)
+    firmware_multiturn: true   # Phase bit4 ON + Min/Max_Position_Limit 0/0: servo counts turns itself
+    home_abs: 2048             # cable-relaxed pose reads 2048 (cookbook/09 --center); home = nearest copy of it
   - name: J2
     type: dual
     ids: [10, 11]
@@ -29,8 +30,11 @@ joints:
     reference_id: 16
     K: 4100
   - name: J4
-    type: single
+    type: continuous           # 360 deg roll, cable-limited like J1. setup: cookbook/12_continuous_setup.py --id 19 --center
     motor_id: 19
+    range_ticks: 2048
+    firmware_multiturn: true
+    home_abs: 2048
   - name: J5
     type: single
     motor_id: 20
@@ -60,3 +64,8 @@ safety:
 # 실행 스크립트는 이 파일이 같은 폴더에 있으면 위 safety 값 위에 덮어씌워 적용한다.
 
 rate_hz: 50
+
+# 초기화(examples/init.py): 자가진단 후 이 자세로 이동해 대기. 비어 있으면 현재 자세 유지.
+# 값은 reference 모터 틱 (연속 관절은 home 기준 논리각 = 보통 2048 근처). jog.py 상태줄에서 읽어 채운다.
+standby_pose: {}
+

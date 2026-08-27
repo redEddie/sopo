@@ -195,6 +195,11 @@ def _run(bus, joints, limits, joint_limits, reflex, source, rate_hz, on_reflex, 
     last_volt = 0.0
     volt_span = (99.0, 0.0)
     first = read_joints(bus, joints)
+    for j in joints:
+        if isinstance(j, ContinuousJoint) and j.range_bounds():
+            lo, hi = j.range_bounds()
+            reflex.set_limit(j.motor_id, lo, hi)
+            print(f"{j.name}: home {j.home} (abs {j.home_abs}), range [{lo}, {hi}], now {first[j.name]}")
     for n, (lo, hi) in joint_limits.items():
         if not lo <= first[n] <= hi:
             print(f"note: {n} at {first[n]} is outside soft limit [{lo}, {hi}] (parked past the end), soft start brings it back")

@@ -214,6 +214,16 @@ python cookbook/10_persist_caps.py --config configs/arm.yaml             # 'yes'
 
 `calibration.yaml`의 `torque_limits`를 `Max_Torque_Limit`(EPROM)에, `position_limits`를 `Min/Max_Position_Limit`(EPROM)에 기록한다. `Torque_Limit`(RAM)은 전원을 켤 때 `Max_Torque_Limit`에서 복원되므로, 이후로는 어떤 스크립트가 `apply_safety()`를 잊어도 서보가 스스로 캡을 지킨다. 연속 관절(J1)의 펌웨어 위치 한계는 건드리지 않는다. 실행 스크립트(`jog.py`, `run_waypoints.py`)는 시작할 때 EPROM이 캘리브레이션과 다르면 경고한다(드리프트 검사).
 
+### 12_continuous_setup.py — 연속 관절(J1/J4) 서보 설정
+
+```bash
+# 관절을 케이블 풀린 자세에 놓고 (토크 OFF)
+python cookbook/12_continuous_setup.py --port /dev/ttyACM0 --id 19 --center
+python cookbook/09_continuous_angle.py --port /dev/ttyACM0 --id 19     # 손으로 360° 넘게 돌려 검증
+```
+
+센터링(현재 자세 = 2048, 단일턴 모드에서) → 펌웨어 멀티턴(Phase bit4 ON, Min/Max_Position_Limit 0/0) 순서로 기록한다. 멀티턴 모드에서는 서보가 4095/0 경계를 스스로 넘어 위치를 연속으로 보고한다. 단일턴 모드는 경계에서 긴 길로 돌아 ±5° 떨림이 난다(실측). 멀티턴 모드에서 `Homing_Offset`을 바꾸면 예측 불가하므로 센터링은 반드시 먼저. 전원을 끄면 바퀴 수가 초기화되므로 `arm.yaml`의 `home_abs: 2048`과 `range_ticks: 2048`(±180°)로 가장 가까운 2048을 집으로 잡아 케이블을 보호한다.
+
 ---
 
 ## 5. 트러블슈팅

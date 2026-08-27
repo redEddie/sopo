@@ -1,0 +1,62 @@
+"""시작 루틴: 자가진단(관절별 소구간 왕복) → 기준 자세 기록 → 대기 자세로 이동.
+
+Franka가 브레이크를 풀고 FCI를 활성화하기 전에 상태를 점검하는 것에 대응한다. 제어를 시작하기 전에
+통신·토크·추종·부하가 정상인지 실제로 움직여 확인하고, 연속 관절의 home을 확정한다.
+"""
+
+from __future__ import annotations
+
+import sys
+import time
+
+from .bus import FeetechBus
+from .control import command_joints, read_joints
+from .joints import ContinuousJoint, DualMotorJoint, Joint
+from .safety import SafetyLimits
+
+TEST_TICKS = 30      # 자가진단 이동량 (약 2.6 deg)
+ARRIVE = 12
+STEP = 10            # 자가진단 스텝 (느리게)
+
+
+def self_test(bus: FeetechBus, joints: list[Joint], limits: SafetyLimits, order: list[str] | None = None) -> dict[str, dict]:
+    """관절을 하나씩(기본: 말단부터) +TEST_TICKS 갔다가 되돌린다. 실패 시 RuntimeError (호출자가 토크 해제)."""
+    by_name = {j.name: j for j in joints}
+    names = order or [j.name for j in reversed(joints)]
+    report: dict[str, dict] = {}
+    present = read_joints(bus, joints)
+    for j in joints:
+        if isinstance(j, ContinuousJoint) and j.range_bounds():
+            lo, hi = j.range_bounds()
+            print(f"{j.name}: home {j.home} (abs {j.home_abs}), now {present[j.name]}, range [{lo}, {hi}]")
+    for name in names:
+        j = by_name[name]
+        start = present[name]
+        ids = list(j.motor_ids)
+        result = {"ok": False, "max_load": 0, "err_back": None}
+        for target in (start + TEST_TICKS, start):
+            t0 = time.monotonic()
+            while True:
+                present = read_joints(bus, joints)
+                cur = present[name]
+                goal = max(cur - STEP, min(cur + STEP, target))
+                if isinstance(j, ContinuousJoint):
+                    goal = j.clamp(goal)
+                command_joints(bus, joints, {**present, name: goal})
+                loads = bus.sync_read("Present_Load", ids)
+                result["max_load"] = max(result["max_load"], max(abs(v) for v in loads.values()))
+                if abs(target - cur) < ARRIVE:
+                    break
+                if time.monotonic() - t0 > 3.0:
+                    raise RuntimeError(f"self-test failed: {name} did not reach {target} (at {cur}, load {loads})")
+                time.sleep(0.02)
+        result["err_back"] = present[name] - start
+        cap = min(limits.torque_for(i) for i in ids)
+        result["ok"] = result["max_load"] < 0.9 * cap
+        report[name] = result
+        flag = "" if result["ok"] else f"  <-- load {result['max_load']} near cap {cap}"
+        print(f"self-test {name}: ok, max load {result['max_load']}‰ / cap {cap}, return error {result['err_back']:+d}{flag}")
+    bad = [n for n, r in report.items() if not r["ok"]]
+    if bad:
+        raise RuntimeError(f"self-test: cap headroom too small on {bad}")
+    return report

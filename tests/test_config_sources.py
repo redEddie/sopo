@@ -100,3 +100,27 @@ def test_verify_eprom_reports_drift():
     problems = verify_eprom(FakeBus(), lim, [19, 21])
     assert len(problems) == 2 and "ID19" in problems[0] and "ID19" in problems[1]
 
+
+def test_continuous_home_abs_picks_nearest_turn():
+    from sopo.joints import ContinuousJoint
+    class B:
+        def __init__(self, v): self.v = v
+        def read(self, reg, mid): return self.v
+    j = ContinuousJoint("J1", 1, range_ticks=2048, firmware_multiturn=True, home_abs=2048)
+    assert j.read(B(2300)) == 2300 and j.home == 2048                # 같은 바퀴
+    j2 = ContinuousJoint("J1", 1, range_ticks=2048, firmware_multiturn=True, home_abs=2048)
+    assert j2.read(B(4500)) == 4500 and j2.home == 2048 + 4096       # 다음 바퀴의 2048이 더 가까움
+    assert j2.range_bounds() == (4096, 8192)
+
+
+def test_reflex_joint_limit_for_continuous_range():
+    from sopo import SafetyLimits
+    from sopo.reflex import Reflex, ReflexConfig, Event, Mode
+    r = Reflex(SafetyLimits(torque_limits={1: 200}), {}, ReflexConfig(limit_margin=30, t_limit=0.5))
+    r.set_limit(1, 0, 4096)
+    r.update(now=0.0, present={1: 2048}, goal={1: 2048}, load={1: 0})           # 안에서 시작 → 무장
+    trips = []
+    for k in range(1, 5):
+        trips += r.update(now=0.3 * k, present={1: 4200}, goal={1: 4096}, load={1: 0})
+    assert [t.event for t in trips] == [Event.JOINT_LIMIT] and r.mode is Mode.REFLEX
+

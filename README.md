@@ -32,11 +32,13 @@ sopo/            핵심 패키지
   joints.py        관절 추상화 (single / dual 반전쌍 / 케이블 제한 continuous)
   reflex.py        호스트 측 충돌 리플렉스 (포화+정체 → 홀드 래칭, recover)
   control.py       다관절 안전 제어 루프 (클램프 → 명령 → reflex → 홀드/복구)
-  sources.py       명령 소스 경계 (lerobot Teleoperator 구조): WaypointSource + 리더 암/정책 플레이스홀더
+  sources.py       명령 소스 경계 (lerobot Teleoperator 구조): WaypointSource/JogSource + 리더 암/정책 플레이스홀더
+  startup.py       자가진단 루틴 (init.py가 사용)
   config.py        arm.yaml/calibration.yaml 로더
 cookbook/        Feetech 기초 조작 쿡북 — README.md 참조
                    (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정 → 위치 한계 실측 → 자중 토크 실측)
 examples/
+  init.py          초기화: 자가진단(관절별 2.6° 왕복) → 연속 관절 home 확정 → standby_pose 대기
   run_waypoints.py 다관절 웨이포인트 주행 (안전 루프의 첫 클라이언트)
   jog.py           키보드 조그 — 리더 암 없이 관절 실시간 이동, 자세 찾기
 logs/            블랙박스 CSV (리플렉스/정지 시 직전 60초 자동 저장, gitignore)
@@ -70,6 +72,9 @@ python cookbook/08_move_joint.py --config configs/arm.yaml --joint J4 --goal 230
 
 # 7. 다관절 웨이포인트 주행 (리플렉스 포함)
 python examples/run_waypoints.py --config configs/arm.yaml --waypoints configs/waypoints.example.yaml --verbose
+
+# 7.5 초기화: 자가진단 후 standby_pose(arm.yaml)로 이동해 대기 — 제어 세션 시작 전 루틴
+python examples/init.py --config configs/arm.yaml
 
 # 8. 키보드 조그 (←/→ 이동, ↑/↓ 관절, space 홀드, q 종료)
 python examples/jog.py --config configs/arm.yaml
