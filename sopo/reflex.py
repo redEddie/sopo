@@ -28,6 +28,7 @@ class Event(Enum):
     PAIR_MISMATCH = "pair_mismatch"
     COMM_LOSS = "comm_loss"
     OVERTEMP = "overtemp"
+    JOINT_LIMIT = "joint_limit"  # 측정 위치가 소프트 리밋 밖 (libfranka joint_position_limits_violation)
 
 
 @dataclass
@@ -44,6 +45,7 @@ class ReflexConfig:
     temp_warn: int = 65
     temp_stop: int = 70
     backoff_ticks: int = 0
+    limit_margin: int = 30  # 소프트 리밋을 이만큼 넘어야 JOINT_LIMIT (클램프 자체는 이벤트 아님)
 
 
 @dataclass
@@ -226,6 +228,17 @@ class Reflex:
                     new_trips.extend(self._emit(trip))
             else:
                 state.err_start = None
+
+        # JOINT_LIMIT: 명령은 이미 클램프되므로 여기 걸리는 건 외력으로 밀렸거나 캡 부족으로 처진 경우.
+        # 캘리브레이션된(position_limits에 있는) 모터만 검사한다 — 연속 관절(J1)은 논리각이라 제외.
+        if self._mode is not Mode.REFLEX:
+            for motor_id, (lo, hi) in self._limits.position_limits.items():
+                pos = present.get(motor_id)
+                if pos is None:
+                    continue
+                if pos < lo - self._cfg.limit_margin or pos > hi + self._cfg.limit_margin:
+                    trip = Trip(Event.JOINT_LIMIT, motor_id, f"position {pos} outside [{lo}, {hi}] by > {self._cfg.limit_margin}")
+                    new_trips.extend(self._emit(trip))
 
         # PAIR_MISMATCH detection.
         if self._mode is not Mode.REFLEX:

@@ -229,3 +229,14 @@ def test_recover():
     ok, reason = r.recover(present={19: 1000}, load={19: 10})
     assert ok is True
     assert r.mode is Mode.MOVE
+
+
+def test_joint_limit_violation_by_external_push():
+    """Measured position pushed past a calibrated soft limit (+margin) -> JOINT_LIMIT, REFLEX."""
+    from sopo import SafetyLimits
+    lim = SafetyLimits(position_limits={19: (220, 3969)}, torque_limits={19: 150})
+    r = Reflex(lim, {}, ReflexConfig(limit_margin=30))
+    assert r.update(now=0.0, present={19: 3990}, goal={19: 3969}, load={19: 20}) == []   # 마진 안
+    trips = r.update(now=0.02, present={19: 4005}, goal={19: 3969}, load={19: 20})
+    assert [t.event for t in trips] == [Event.JOINT_LIMIT] and r.mode is Mode.REFLEX
+

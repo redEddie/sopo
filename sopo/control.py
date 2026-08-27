@@ -123,6 +123,7 @@ def run_control_loop(
     load: dict[int, int] = {}
     rp: dict[int, int] = {}
     jitter_max = 0.0
+    warned_limit: set[str] = set()
 
     while not source.is_done():
         t0 = time.monotonic()
@@ -133,6 +134,10 @@ def run_control_loop(
             action = source.get_action(present, t0)
             step = SOFT_START_STEP if soft else limits.max_relative_target
             goal = clamp_joint_goals(action, present, joint_limits, step, joints)
+            for n, (lo, hi) in joint_limits.items():
+                if n in action and not lo <= action[n] <= hi and n not in warned_limit:
+                    warned_limit.add(n)
+                    print(f"경고: {n} 목표 {action[n]}이 소프트 리밋 [{lo}, {hi}] 밖 — 리밋에서 잘립니다 (이벤트 아님)", file=sys.stderr)
             command_joints(bus, joints, goal)
             if soft and all(abs(action[n] - present[n]) < ARRIVAL_TICKS for n in action):
                 soft = False

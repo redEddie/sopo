@@ -15,7 +15,7 @@
 
 ```python
 class Mode(Enum): IDLE, MOVE, REFLEX, STOPPED          # STOPPED = 토크 해제됨, 재시작 필요
-class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
+class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP, JOINT_LIMIT
 ```
 
 ## 3. 판정 규칙 (모터 단위, 기본값은 ReflexConfig로 조정)
@@ -28,6 +28,7 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 | PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` | pair_tol 20틱 | 쌍이 서로 싸움 |
 | COMM_LOSS | 연속 통신 실패 ≥ `comm_fail_max` | 5 | 연속 오류 5회 |
 | OVERTEMP | 온도 ≥ `temp_stop` (경고는 `temp_warn`) | 70 °C / 65 °C | 모터 Max_Temperature_Limit 기본 70 |
+| JOINT_LIMIT | 캘리브레이션된 모터의 **측정** 위치가 소프트 리밋을 `limit_margin` 넘게 벗어남 (명령 클램프는 이벤트 아님 — 외력에 밀리거나 캡 부족으로 처진 경우) | limit_margin 30틱 | libfranka `joint_position_limits_violation` |
 
 `cap`은 `SafetyLimits.torque_for(motor_id)`. 부하 부호는 미는 방향 → `backoff` 방향 결정에 쓴다.
 
