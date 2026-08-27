@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """키보드 조그 — 리더 암 없이 관절을 실시간으로 움직인다 (ActionSource=JogSource).
 
-키:  ←/→ 선택 관절 -/+   ↑/↓ 관절 선택   1~6 관절 직접 선택   +/- 스텝 증감   space 홀드   q 종료
+키:  ←/→ (또는 a/d) 선택 관절 -/+   ↑/↓ (또는 w/s) 관절 선택   1~6 관절 직접 선택   +/- 스텝   space(h) 홀드   q 종료
 안전: 캡·스텝·리밋·브레이크 존·리플렉스는 run_control_loop가 그대로 적용. 목표는 현재 ±200틱으로 묶여
       키를 떼면 곧 멈춘다. 리플렉스가 뜨면 [r] 복구 / [q] 종료.
 
@@ -10,6 +10,7 @@
 """
 
 import argparse
+import os
 import select
 import sys
 import termios
@@ -26,18 +27,19 @@ from sopo.safety import verify_eprom
 from sopo.sources import JogSource
 
 KEYMAP = {"\x1b[D": "left", "\x1b[C": "right", "\x1b[A": "up", "\x1b[B": "down"}
+ALIASES = {"a": "left", "d": "right", "w": "up", "s": "down", "h": " "}  # 화살표가 안 먹는 터미널용
 
 
 class KeyReader:
-    """cbreak 모드 논블로킹 키 읽기. 화살표는 이스케이프 시퀀스로 온다."""
+    """cbreak 모드 논블로킹 키 읽기. sys.stdin.read()는 파이썬 버퍼가 키를 삼키므로 os.read(fd)를 쓴다."""
 
     def __init__(self):
         self.fd = sys.stdin.fileno()
         self.saved = None
+        self._buf = b""
 
     def __enter__(self):
-        self.saved = termios.tcgetattr(self.fd)
-        tty.setcbreak(self.fd)
+        self.reenter()
         return self
 
     def __exit__(self, *exc):
@@ -54,14 +56,25 @@ class KeyReader:
             tty.setcbreak(self.fd)
 
     def poll(self) -> list[str]:
-        keys = []
-        while select.select([sys.stdin], [], [], 0)[0]:
-            ch = sys.stdin.read(1)
-            if ch == "\x1b":
-                seq = ch + sys.stdin.read(2) if select.select([sys.stdin], [], [], 0.01)[0] else ch
-                keys.append(KEYMAP.get(seq, "esc"))
-            else:
-                keys.append(ch)
+        while select.select([self.fd], [], [], 0)[0]:
+            chunk = os.read(self.fd, 64)
+            if not chunk:
+                break
+            self._buf += chunk
+        keys: list[str] = []
+        buf = self._buf
+        self._buf = b""
+        i = 0
+        while i < len(buf):
+            if buf[i:i + 1] == b"\x1b":
+                seq = buf[i:i + 3].decode(errors="ignore")
+                if seq in KEYMAP:
+                    keys.append(KEYMAP[seq]); i += 3; continue
+                if len(buf) - i < 3:          # 시퀀스가 아직 덜 옴 → 다음 poll에서
+                    self._buf = buf[i:]; break
+                i += 1; continue
+            ch = buf[i:i + 1].decode(errors="ignore")
+            keys.append(ALIASES.get(ch, ch)); i += 1
         return keys
 
 
@@ -99,14 +112,16 @@ def main() -> None:
     try:
         apply_safety(bus, ids, limits)
         print(f"토크 캡: " + ", ".join(f"{i}:{limits.torque_for(i) / 10:.0f}%" for i in ids))
-        print("←/→ 이동  ↑/↓·1~6 관절 선택  +/- 스텝  space 홀드  q 종료")
+        print("←/→(a/d) 이동  ↑/↓(w/s)·1~6 관절 선택  +/- 스텝  space(h) 홀드  q 종료")
         bus.enable_torque(ids)
         with reader:
             run_control_loop(bus, joints, limits, joint_limits, reflex, source,
-                             rate_hz=cfg.get("rate_hz", 50), on_reflex=on_reflex, verbose=True, status_every=0.2,
+                             rate_hz=cfg.get("rate_hz", 50), on_reflex=on_reflex, verbose=True, status_every=0.1, status_inline=True,
                              blackbox=Blackbox(ids, rate_hz=cfg.get("rate_hz", 50)))
     except KeyboardInterrupt:
         print("\n종료 요청.")
+    except RuntimeError as e:
+        print(f"\n중단: {e}", file=sys.stderr)
     finally:
         reader.restore()
         print("토크를 해제합니다 — 암이 내려올 수 있으니 잡아주세요.")

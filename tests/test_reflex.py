@@ -231,12 +231,16 @@ def test_recover():
     assert r.mode is Mode.MOVE
 
 
-def test_joint_limit_violation_by_external_push():
-    """Measured position pushed past a calibrated soft limit (+margin) -> JOINT_LIMIT, REFLEX."""
+def test_joint_limit_arms_after_entering_range_and_needs_dwell():
+    """Start outside the range (parked at the mechanical end): no trip while returning.
+    Once inside, being pushed out past the margin for > t_limit -> JOINT_LIMIT."""
     from sopo import SafetyLimits
     lim = SafetyLimits(position_limits={19: (220, 3969)}, torque_limits={19: 150})
-    r = Reflex(lim, {}, ReflexConfig(limit_margin=30))
-    assert r.update(now=0.0, present={19: 3990}, goal={19: 3969}, load={19: 20}) == []   # 마진 안
-    trips = r.update(now=0.02, present={19: 4005}, goal={19: 3969}, load={19: 20})
+    r = Reflex(lim, {}, ReflexConfig(limit_margin=30, t_limit=0.5))
+    assert r.update(now=0.0, present={19: 4020}, goal={19: 3969}, load={19: 60}) == []   # 밖에서 시작 → 무장 전
+    assert r.update(now=0.3, present={19: 4020}, goal={19: 3969}, load={19: 60}) == []
+    r.update(now=0.6, present={19: 3960}, goal={19: 3969}, load={19: 20})                 # 안으로 들어옴 → 무장
+    assert r.update(now=1.0, present={19: 4005}, goal={19: 3969}, load={19: 20}) == []   # 밖으로 밀림, 아직 0.5s 미만
+    assert r.update(now=1.3, present={19: 4005}, goal={19: 3969}, load={19: 20}) == []
+    trips = r.update(now=1.6, present={19: 4005}, goal={19: 3969}, load={19: 20})
     assert [t.event for t in trips] == [Event.JOINT_LIMIT] and r.mode is Mode.REFLEX
-

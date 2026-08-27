@@ -160,6 +160,7 @@ def run_control_loop(
     status_every: float = 0.5,
     verbose: bool = False,
     blackbox: Blackbox | None = None,
+    status_inline: bool = False,
 ) -> None:
     """source가 끝나거나(is_done) 사용자가 종료할 때까지 돈다. 토크는 켜진 채로 돌려받는다."""
     ids = [mid for j in joints for mid in j.motor_ids]
@@ -171,6 +172,10 @@ def run_control_loop(
     rp: dict[int, int] = {}
     jitter_max = 0.0
     warned_limit: set[str] = set()
+    first = read_joints(bus, joints)
+    for n, (lo, hi) in joint_limits.items():
+        if not lo <= first[n] <= hi:
+            print(f"안내: {n} 현재 {first[n]}이 소프트 리밋 [{lo}, {hi}] 밖 (토크 OFF 중 기계 끝에 놓임) — 소프트스타트로 되돌립니다.")
 
     while not source.is_done():
         t0 = time.monotonic()
@@ -232,6 +237,10 @@ def run_control_loop(
         if verbose and t0 - last_status >= status_every:
             last_status = t0
             line = getattr(source, "last_status", "") or "  ".join(f"{n}:{present[n]}->{goal[n]}" for n in goal)
-            print(f"[{source.name}] {line}  | cycle {elapsed * 1e3:.1f}ms, max over {jitter_max * 1e3:.1f}ms")
+            text = f"[{source.name}] {line}  | cycle {elapsed * 1e3:.1f}ms, max over {jitter_max * 1e3:.1f}ms"
+            if status_inline:
+                print("\r" + text.ljust(140), end="", flush=True)  # 한 줄에서 갱신
+            else:
+                print(text)
         if elapsed < period:
             time.sleep(period - elapsed)

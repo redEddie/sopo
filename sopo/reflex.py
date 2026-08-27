@@ -46,6 +46,7 @@ class ReflexConfig:
     temp_stop: int = 70
     backoff_ticks: int = 0
     limit_margin: int = 30  # 소프트 리밋을 이만큼 넘어야 JOINT_LIMIT (클램프 자체는 이벤트 아님)
+    t_limit: float = 0.5    # 리밋 밖에 이만큼 머물러야 JOINT_LIMIT (되돌아오는 중이면 안 뜸)
 
 
 @dataclass
@@ -64,6 +65,8 @@ class _MotorState:
         self.err_start: float | None = None
         self.accel_until: float = 0.0
         self.last_goal: int | None = None
+        self.limit_armed: bool = False   # 범위 안에 한 번 들어온 뒤에만 리밋 감시
+        self.limit_start: float | None = None
 
 
 class Reflex:
@@ -230,14 +233,28 @@ class Reflex:
                 state.err_start = None
 
         # JOINT_LIMIT: 명령은 이미 클램프되므로 여기 걸리는 건 외력으로 밀렸거나 캡 부족으로 처진 경우.
-        # 캘리브레이션된(position_limits에 있는) 모터만 검사한다 — 연속 관절(J1)은 논리각이라 제외.
+        # 토크 OFF 중 기계 끝에 놓인 채 시작하는 일이 흔하므로, 범위 안에 한 번 들어온 뒤(armed)에만,
+        # 그리고 t_limit 이상 밖에 머물 때만 판정한다 (되돌아오는 중이면 이벤트 아님).
+        # 캘리브레이션된(position_limits에 있는) 모터만 — 연속 관절(J1)은 논리각이라 제외.
         if self._mode is not Mode.REFLEX:
             for motor_id, (lo, hi) in self._limits.position_limits.items():
                 pos = present.get(motor_id)
                 if pos is None:
                     continue
-                if pos < lo - self._cfg.limit_margin or pos > hi + self._cfg.limit_margin:
-                    trip = Trip(Event.JOINT_LIMIT, motor_id, f"position {pos} outside [{lo}, {hi}] by > {self._cfg.limit_margin}")
+                st = self._motor_states.setdefault(motor_id, _MotorState())
+                if lo <= pos <= hi:
+                    st.limit_armed = True
+                    st.limit_start = None
+                    continue
+                outside = pos < lo - self._cfg.limit_margin or pos > hi + self._cfg.limit_margin
+                if not (st.limit_armed and outside):
+                    st.limit_start = None
+                    continue
+                if st.limit_start is None:
+                    st.limit_start = now
+                elif now - st.limit_start >= self._cfg.t_limit:
+                    trip = Trip(Event.JOINT_LIMIT, motor_id,
+                                f"position {pos} outside [{lo}, {hi}] for {now - st.limit_start:.2f}s")
                     new_trips.extend(self._emit(trip))
 
         # PAIR_MISMATCH detection.
@@ -305,6 +322,7 @@ class Reflex:
             state.sat_start = None
             state.err_at_sat = None
             state.err_start = None
+            state.limit_start = None
         return True, ""
 
     def warnings(self) -> list[str]:

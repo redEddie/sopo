@@ -60,6 +60,8 @@ def main() -> None:
         print("웨이포인트 완료.")
     except KeyboardInterrupt:
         print("\n종료 요청.")
+    except RuntimeError as e:
+        print(f"\n중단: {e}", file=sys.stderr)
     finally:
         print("토크를 해제합니다 — 암이 내려올 수 있으니 잡아주세요.")
         bus.disconnect(disable_torque_ids=ids)
