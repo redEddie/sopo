@@ -95,6 +95,11 @@ class ContinuousJoint:
 
     The turn count lives in memory only, so the program must be started with the
     cable relaxed (that pose becomes the centre of the allowed range).
+
+    LIMITATION: in single-turn firmware mode the servo never crosses raw 4095/0 - it
+    would take the long way round. Keep home at raw ~2048 (cookbook/09 --center) and
+    range_ticks <= 2000 so the used range never contains the raw wrap. Full >360 deg
+    needs the firmware multi-turn mode (issue #8).
     """
 
     def __init__(self, name: str, motor_id: int, range_ticks: int | None = None):

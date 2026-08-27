@@ -16,7 +16,7 @@ joints:
   - name: J1
     type: continuous
     motor_id: 1
-    range_ticks: 2600   # ±228° (총 456°). 아직 미실측 — cookbook/09_continuous_angle.py로 재고 교체할 것
+    range_ticks: 2000   # ±175°. 단일 회전 펌웨어는 4095/0 경계를 못 넘으므로 2000 이하 + 09 --center 필수. 360° 초과는 #8 이후
   - name: J2
     type: dual
     ids: [10, 11]

@@ -30,12 +30,24 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="연속 각도 표시 (랩 자동 처리)")
     parser.add_argument("--port", default="/dev/ttyACM0")
     parser.add_argument("--id", type=int, default=1)
+    parser.add_argument("--center", action="store_true",
+                        help="현재(케이블 풀린) 자세가 raw 2048로 읽히도록 Homing_Offset을 EPROM에 기록 — 사용 범위가 4095/0 경계를 피하게")
     args = parser.parse_args()
 
     bus = FeetechBus(args.port)
     bus.connect()
     bus.disable_torque([args.id])
 
+    if args.center:
+        raw = bus.read("Present_Position", args.id)
+        old = bus.read("Homing_Offset", args.id)
+        # Present = encoder - Homing_Offset (mod 4096). 현재 읽기값을 2048로 옮기려면 offset += (raw - 2048)
+        new = (old + (raw - 2048) + 2048) % 4096 - 2048
+        new = max(-2047, min(2047, new))
+        with bus.eprom_unlocked(args.id):
+            bus.write("Homing_Offset", args.id, new)
+        print(f"Homing_Offset {old} -> {new}: reading {raw} -> {bus.read('Present_Position', args.id)} (target 2048)")
+        print("single-turn firmware cannot cross 4095/0: keep range_ticks <= 2000 in arm.yaml until multi-turn mode (#8) is verified")
     start_raw = last_raw = bus.read("Present_Position", args.id)
     turns = 0
     lo = hi = 0.0
