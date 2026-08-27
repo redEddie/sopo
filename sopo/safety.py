@@ -54,6 +54,10 @@ class SafetyLimits:
     # Max goal change per control cycle in ticks. At 50 Hz, 80 ticks/cycle is
     # about 350 deg/s worst case; lower it for a heavier arm.
     max_relative_target: int = 80
+    # Franka의 position-based velocity limit 단순판: 리밋(또는 J1 케이블 범위)까지 남은 거리가
+    # brake_zone_ticks 안이면 허용 스텝을 거리에 비례해 줄인다 (하한 brake_min_step). 도달 전에 감속.
+    brake_zone_ticks: int = 200
+    brake_min_step: int = 10
 
     # Optional per-joint overrides: motor_id -> (min_position, max_position)
     position_limits: dict[int, tuple[int, int]] = field(default_factory=dict)

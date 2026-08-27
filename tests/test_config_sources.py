@@ -58,3 +58,17 @@ def test_clamp_joint_goals_step_limits_and_continuous_range():
     goal = clamp_joint_goals({"J1": 9000, "J2": 5000, "J4": 1000}, {"J1": 2000, "J2": 1000, "J4": 1900},
                              {"J2": (900, 3100), "J4": (220, 3969)}, 80, joints)
     assert goal == {"J1": 2080, "J2": 1080, "J4": 1820}
+
+
+def test_brake_zone_slows_down_near_limits():
+    joints = make_joints({"joints": JOINTS})
+    lim = {"J4": (50, 4045)}
+    # 리밋까지 145틱 남음, 존 200 → 스텝 80 * 145/200 = 58
+    g = clamp_joint_goals({"J4": 4045}, {"J4": 3900}, lim, 80, joints, brake_zone=200, brake_min_step=10)
+    assert g["J4"] == 3958
+    # 리밋에서 멀면 풀 스텝, 리밋 바로 앞이면 하한 스텝
+    assert clamp_joint_goals({"J4": 4045}, {"J4": 2000}, lim, 80, joints, 200, 10)["J4"] == 2080
+    assert clamp_joint_goals({"J4": 4045}, {"J4": 4040}, lim, 80, joints, 200, 10)["J4"] == 4045  # 5틱 남음 → min_step 10 > 5 → 목표 도달
+    # 리밋에서 멀어지는 방향은 감속 없음
+    assert clamp_joint_goals({"J4": 2000}, {"J4": 4040}, lim, 80, joints, 200, 10)["J4"] == 3960
+

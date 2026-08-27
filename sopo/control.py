@@ -32,25 +32,40 @@ def command_joints(bus: FeetechBus, joints: list[Joint], goals: dict[str, int]) 
         j.command(bus, goals[j.name])
 
 
+def _braked_step(pos: int, target: int, bounds: tuple[int, int] | None, step: int, zone: int, min_step: int) -> int:
+    """리밋에 가까워질수록 허용 스텝을 줄인다 (Franka position-based velocity limit의 단순판)."""
+    if bounds is None or zone <= 0 or target == pos:
+        return step
+    lo, hi = bounds
+    dist = (hi - pos) if target > pos else (pos - lo)
+    if dist >= zone:
+        return step
+    return max(min_step, int(step * max(dist, 0) / zone))
+
+
 def clamp_joint_goals(
     goal: dict[str, int],
     present: dict[str, int],
     joint_limits: dict[str, tuple[int, int]],
     max_step: int,
     joints: list[Joint],
+    brake_zone: int = 0,
+    brake_min_step: int = 10,
 ) -> dict[str, int]:
-    """관절 리밋(연속 관절은 home ± range_ticks) + 사이클당 스텝 제한. 점프 불가."""
+    """관절 리밋(연속 관절은 home ± range_ticks) + 사이클당 스텝 제한 + 리밋 접근 감속. 점프 불가."""
     by_name = {j.name: j for j in joints}
     safe: dict[str, int] = {}
     for name, target in goal.items():
         j = by_name[name]
         if isinstance(j, ContinuousJoint):
             target = j.clamp(target)  # 케이블 범위: 잘라내기만, 오류 아님
+            bounds = j.range_bounds()
         else:
-            lo, hi = joint_limits.get(name, (0, TICKS_PER_REV - 1))
-            target = max(lo, min(hi, target))
+            bounds = joint_limits.get(name, (0, TICKS_PER_REV - 1))
+            target = max(bounds[0], min(bounds[1], target))
         pos = present[name]
-        safe[name] = max(pos - max_step, min(pos + max_step, target))
+        step = _braked_step(pos, target, bounds, max_step, brake_zone, brake_min_step)
+        safe[name] = max(pos - step, min(pos + step, target))
     return safe
 
 
@@ -133,7 +148,8 @@ def run_control_loop(
             load = bus.sync_read("Present_Load", ids)
             action = source.get_action(present, t0)
             step = SOFT_START_STEP if soft else limits.max_relative_target
-            goal = clamp_joint_goals(action, present, joint_limits, step, joints)
+            goal = clamp_joint_goals(action, present, joint_limits, step, joints,
+                                     limits.brake_zone_ticks, limits.brake_min_step)
             for n, (lo, hi) in joint_limits.items():
                 if n in action and not lo <= action[n] <= hi and n not in warned_limit:
                     warned_limit.add(n)
