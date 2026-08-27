@@ -153,6 +153,7 @@ class Blackbox:
             w = csv.writer(f)
             w.writerow(["t", "mode"] + [f"{k}{i}" for i in self.ids for k in ("pos", "goal", "load")] + ["note", "vmin"])
             w.writerows(self.rows)
+        self.rows.clear()  # 다음 파일에 같은 구간이 다시 실리지 않도록
         return path
 
 

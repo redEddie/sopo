@@ -33,7 +33,7 @@
 - [x] 다관절 안전 루프 하드웨어 검증 — init.py(WaypointSource)로 6관절 대기 자세 도달 확인 (2026-08-28)
 - [x] 키보드 조그 하드웨어 검증 (`examples/jog.py`) — J1 360° 통과 확인
 - [x] 초기화 루틴 검증 (`examples/init.py`): 케이블 확인 → 자가진단 6관절 통과 → standby_pose 도달. standby는 13_capture_pose로 기록
-- [ ] 리플렉스 하드웨어 튜닝 — 블랙박스 8건 분석으로 판정 규칙 수정(위치 기반 진행량)까지 완료. **남음: `cookbook/14_reflex_check.py --joint J4`로 합격 확인 (Phase A 오탐 0 / Phase B 잡기 감지·복구)**
+- [x] 리플렉스 합격 (2026-08-28, `14_reflex_check --joint J4 --delta 300`): Phase A 왕복 10회 오탐 0, Phase B 손으로 잡기 → 포화 0.32s 후 COLLISION, 홀드, r 복구 6회 반복 성공. 기본값(sat 0.95 / 0.3s / progress 40) 유지
 
 ## 2. Robot API/SDK (Franka의 libfranka 포지션)
 
