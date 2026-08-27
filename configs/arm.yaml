@@ -68,5 +68,5 @@ rate_hz: 50
 # 초기화(examples/init.py): 자가진단 후 이 자세로 이동해 대기. 비어 있으면 현재 자세 유지.
 # 값은 reference 모터 틱. 연속 관절은 home_abs(2048) 기준 프레임으로 저장한다 (세션마다 바퀴 수가 달라도 같은 자세).
 # 측정: 토크 OFF로 자세를 만든 뒤 python cookbook/13_capture_pose.py --config configs/arm.yaml
-standby_pose: {}
+standby_pose: {J1: 2133, J2: 971, J3: 3141, J4: 2064, J5: 2212, J6: 2727}
 

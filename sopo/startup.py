@@ -19,7 +19,8 @@ ARRIVE = 12
 STEP = 10            # 자가진단 스텝 (느리게)
 
 
-def self_test(bus: FeetechBus, joints: list[Joint], limits: SafetyLimits, order: list[str] | None = None) -> dict[str, dict]:
+def self_test(bus: FeetechBus, joints: list[Joint], limits: SafetyLimits, joint_limits: dict[str, tuple[int, int]] | None = None,
+              order: list[str] | None = None) -> dict[str, dict]:
     """관절을 하나씩(기본: 말단부터) +TEST_TICKS 갔다가 되돌린다. 실패 시 RuntimeError (호출자가 토크 해제)."""
     by_name = {j.name: j for j in joints}
     names = order or [j.name for j in reversed(joints)]
@@ -34,7 +35,15 @@ def self_test(bus: FeetechBus, joints: list[Joint], limits: SafetyLimits, order:
         start = present[name]
         ids = list(j.motor_ids)
         result = {"ok": False, "max_load": 0, "err_back": None}
-        for target in (start + TEST_TICKS, start):
+        # 범위 중심 쪽으로 움직인다 (리밋 끝에 주차된 관절도 시험 가능). 시작점이 리밋 밖이면 안쪽으로 되돌린다.
+        bounds = j.range_bounds() if isinstance(j, ContinuousJoint) else (joint_limits or {}).get(name)
+        if bounds:
+            lo, hi = bounds
+            start = max(lo, min(hi, start))
+            direction = 1 if start < (lo + hi) / 2 else -1
+        else:
+            direction = 1
+        for target in (start + direction * TEST_TICKS, start):
             t0 = time.monotonic()
             while True:
                 present = read_joints(bus, joints)

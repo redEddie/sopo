@@ -52,7 +52,7 @@ def main() -> None:
         apply_safety(bus, ids, limits)
         bus.enable_torque(ids)
         if not args.skip_test:
-            self_test(bus, joints, limits)
+            self_test(bus, joints, limits, joint_limits)
         standby = {str(k): int(v) for k, v in (cfg.get("standby_pose") or {}).items()}
         # standby of continuous joints is stored in the home_abs frame; shift into this session's turn
         from sopo.control import read_joints
