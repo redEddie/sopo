@@ -25,7 +25,7 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 | COLLISION | `abs(load) >= sat_ratio * cap` 가 `t_collision` 창 동안 지속 **AND** 그 창에서 추종 오차 감소량 < `progress_ticks` (손에 잡혀 1~2틱씩 기어가는 것도 충돌) | sat_ratio 0.95, t_collision 0.3 s, progress_ticks 40 | 07: 무부하 85%, 잡으면 100% 포화, 잡힌 채 ~110틱/s 로 기어감 |
 | (가속 유예) | 목표가 `accel_step` 이상 바뀐 직후 `t_accel` 동안은 COLLISION 판정 보류 | accel_step 40틱, t_accel 0.2 s | Franka의 acceleration 임계값 상향에 대응 |
 | TRACKING_ERROR | `abs(goal-present) > err_ticks` 가 `t_error` 이상 지속 | err_ticks 150(≈13°), t_error 0.5 s | 캡 부족·걸림·미응답 통합 감지 |
-| PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` | pair_tol 20틱 | 쌍이 서로 싸움 |
+| PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` 가 `t_pair` 지속 | pair_tol 60틱, t_pair 0.3 s | 실측: 자유 이동 ±6, 잡혀서 포화 시 +21(기어 변형). 진짜 불일치는 수백 틱 |
 | COMM_LOSS | 연속 통신 실패 ≥ `comm_fail_max` | 5 | 연속 오류 5회 |
 | OVERTEMP | 온도 ≥ `temp_stop` (경고는 `temp_warn`) | 70 °C / 65 °C | 모터 Max_Temperature_Limit 기본 70 |
 | JOINT_LIMIT | 캘리브레이션된 모터의 **측정** 위치가 소프트 리밋을 `limit_margin` 넘게 벗어남 (명령 클램프는 이벤트 아님 — 외력에 밀리거나 캡 부족으로 처진 경우) | limit_margin 30틱 | libfranka `joint_position_limits_violation` |
@@ -101,3 +101,4 @@ class Reflex:
 ## 9. 검증 기록
 
 - 2026-08-28 J4(캡 200): Phase A 오탐 0/10회, Phase B 잡기 → 0.32s 감지(포화 −200‰, 이동 +1틱), 홀드·복구 6회. 기본 임계값으로 합격.
+- 2026-08-28 J2(듀얼, 캡 300): 잡기 시 PAIR_MISMATCH가 먼저 발동 (합 편차 +21 > tol 20, 두 모터 300‰ 포화). 기어 변형이 원인 → pair_tol 60 + t_pair 0.3s로 조정, 이후 재검증 필요.

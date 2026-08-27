@@ -40,7 +40,8 @@ class ReflexConfig:
     t_accel: float = 0.2
     err_ticks: int = 150
     t_error: float = 0.5
-    pair_tol: int = 20
+    pair_tol: int = 60   # measured: free +-6, both motors saturated by a grab up to +21; a real fight is hundreds
+    t_pair: float = 0.3  # must persist (gear deflection under load is transient)
     comm_fail_max: int = 5
     temp_warn: int = 65
     temp_stop: int = 70
@@ -109,6 +110,7 @@ class Reflex:
         self._last_collision: Trip | None = None
         self._last_load: dict[int, int] = {}
         self._extra_limits: dict[int, tuple[int, int]] = {}  # continuous joints: home +/- range (logical frame)
+        self._pair_start: dict[str, float] = {}
 
     @property
     def mode(self) -> Mode:
@@ -267,16 +269,21 @@ class Reflex:
                                 f"position {pos} outside [{lo}, {hi}] for {now - st.limit_start:.2f}s")
                     new_trips.extend(self._emit(trip))
 
-        # PAIR_MISMATCH detection.
+        # PAIR_MISMATCH detection (with dwell: a grab deflects the two gear trains transiently).
         if self._mode is not Mode.REFLEX:
             for joint_name, (ref, mirror, K) in self._pairs.items():
                 if ref not in present or mirror not in present:
                     continue
-                if abs(present[ref] + present[mirror] - K) > self._cfg.pair_tol:
+                dev = present[ref] + present[mirror] - K
+                if abs(dev) <= self._cfg.pair_tol:
+                    self._pair_start.pop(joint_name, None)
+                    continue
+                start = self._pair_start.setdefault(joint_name, now)
+                if now - start >= self._cfg.t_pair:
                     trip = Trip(
                         Event.PAIR_MISMATCH,
                         ref,
-                        f"{joint_name} sum {present[ref] + present[mirror]} != K {K}±{self._cfg.pair_tol}",
+                        f"{joint_name} sum {present[ref] + present[mirror]} != K {K} by {dev:+d} for {now - start:.2f}s (tol {self._cfg.pair_tol})",
                     )
                     new_trips.extend(self._emit(trip))
 
@@ -337,6 +344,7 @@ class Reflex:
             state.pos_at_sat = None
             state.err_start = None
             state.limit_start = None
+        self._pair_start.clear()
         return True, ""
 
     def warnings(self) -> list[str]:

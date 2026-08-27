@@ -123,30 +123,15 @@ def test_tracking_error():
 
 
 def test_pair_mismatch():
-    """Scenario 6: dual pair sum outside tolerance triggers PAIR_MISMATCH."""
-    cfg = ReflexConfig(pair_tol=20)
-    r = Reflex(LIMITS, {"J2": (11, 10, 4005)}, cfg)
-
-    # Within tolerance.
-    trips = r.update(
-        now=0.0,
-        present={11: 2000, 10: 2005},
-        goal={11: 2000, 10: 2005},
-        load={11: 0, 10: 0},
-    )
-    assert trips == []
-
-    # Sum is 4045, K=4005 -> deviation 40 > 20.
-    trips = r.update(
-        now=0.1,
-        present={11: 2000, 10: 2045},
-        goal={11: 2000, 10: 2045},
-        load={11: 0, 10: 0},
-    )
-    assert len(trips) == 1
-    assert trips[0].event is Event.PAIR_MISMATCH
-    assert trips[0].motor_id == 11
-    assert r.mode is Mode.REFLEX
+    """Scenario 6: a transient +40 deflection (grab) is tolerated; a persistent +100 is a PAIR_MISMATCH."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(pair_tol=60, t_pair=0.3))
+    ref, mirror, K = PAIRS["J2"]
+    assert r.update(now=0.0, present={ref: 1000, mirror: K - 1000 + 40}, goal={ref: 1000, mirror: K - 1000}, load={}) == []
+    trips = []
+    for k in range(1, 5):
+        trips += r.update(now=0.1 * k, present={ref: 1000, mirror: K - 1000 + 100}, goal={ref: 1000, mirror: K - 1000}, load={})
+    assert [t.event for t in trips] == [Event.PAIR_MISMATCH]
+    assert trips[0].motor_id == ref and r.mode is Mode.REFLEX
 
 
 def test_comm_loss_and_overtemp():
