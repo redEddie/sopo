@@ -234,6 +234,14 @@ python cookbook/13_capture_pose.py --config configs/arm.yaml --key rest_pose
 
 관절 값을 읽어 `arm.yaml`에 한 줄로 기록한다. 연속 관절은 `home_abs`(2048) 기준 프레임으로 저장하므로 전원을 껐다 켜서 바퀴 수가 달라져도 같은 물리 자세를 가리킨다. `examples/init.py`가 자가진단 후 이 자세로 이동한다.
 
+### 14_reflex_check.py — 리플렉스 합격 판정
+
+```bash
+python cookbook/14_reflex_check.py --config configs/arm.yaml --joint J4 --delta 300 --cycles 10
+```
+
+Phase A: 손 대지 않고 왕복 10회 → 리플렉스 0건이면 합격(오탐 없음). Phase B: 왕복 중 관절을 손으로 잡음 → `[REFLEX] COLLISION …`이 0.5초 안에 뜨고, 홀드 후 손을 놓아도 밀지 않으며, `r`로 복구되면 합격. 실패 시 `ReflexConfig`(sat_ratio, t_collision, t_accel)나 캡을 조정한다. 블랙박스는 `logs/`에 남는다.
+
 ---
 
 ## 5. 트러블슈팅

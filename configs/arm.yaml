@@ -39,7 +39,7 @@ joints:
     type: single
     motor_id: 20
   - name: J6
-    type: single
+    type: single               # placeholder: no end-effector yet (joint is free), limits will be measured once the EE is mounted
     motor_id: 21
 
 safety:
