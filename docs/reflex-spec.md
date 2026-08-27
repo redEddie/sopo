@@ -15,7 +15,7 @@
 
 ```python
 class Mode(Enum): IDLE, MOVE, REFLEX, STOPPED          # STOPPED = 토크 해제됨, 재시작 필요
-class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP, JOINT_LIMIT, DISTURBANCE
+class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP, JOINT_LIMIT
 ```
 
 ## 3. 판정 규칙 (모터 단위, 기본값은 ReflexConfig로 조정)
@@ -28,7 +28,6 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 | PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` 가 `t_pair` 지속 | pair_tol 60틱, t_pair 0.3 s | 실측: 자유 이동 ±6, 잡혀서 포화 시 +21(기어 변형). 진짜 불일치는 수백 틱 |
 | COMM_LOSS | 연속 통신 실패 ≥ `comm_fail_max` | 5 | 연속 오류 5회 |
 | OVERTEMP | 온도 ≥ `temp_stop` (경고는 `temp_warn`) | 70 °C / 65 °C | 모터 Max_Temperature_Limit 기본 70 |
-| DISTURBANCE | 목표가 고정(정지 명령)된 동안 0.5 s 창의 위치 peak-to-peak ≥ `disturb_pp` — 잡혀서 흔들림. 명령 이동 중엔 창을 비우고, 일정한 중력 처짐은 변동이 없어 안 뜸 | disturb_pp 40틱, t_disturb 0.5 s | 모델 없이 "정지 중 외력"을 잡는 규칙. 2026-08-28 goto 후 흔들었는데 COLLISION이 안 뜬 사례 |
 | JOINT_LIMIT | 캘리브레이션된 모터의 **측정** 위치가 소프트 리밋을 `limit_margin` 넘게 벗어남 (명령 클램프는 이벤트 아님 — 외력에 밀리거나 캡 부족으로 처진 경우) | limit_margin 30틱 | libfranka `joint_position_limits_violation` |
 
 `cap`은 `SafetyLimits.torque_for(motor_id)`. 부하 부호는 미는 방향 → `backoff` 방향 결정에 쓴다.
@@ -103,3 +102,4 @@ class Reflex:
 
 - 2026-08-28 J4(캡 200): Phase A 오탐 0/10회, Phase B 잡기 → 0.32s 감지(포화 −200‰, 이동 +1틱), 홀드·복구 6회. 기본 임계값으로 합격.
 - 2026-08-28 J2(듀얼, 캡 300): 잡기 시 PAIR_MISMATCH가 먼저 발동 (합 편차 +21 > tol 20, 두 모터 300‰ 포화). 기어 변형이 원인 → pair_tol 60 + t_pair 0.3s로 조정, 이후 재검증 필요.
+- 2026-08-28 DISTURBANCE(정지 중 위치 흔들림) 규칙을 시험했으나 도착 접근 구간·기계 유격과 구분이 불안정해 **제거**. 정지 중 외력 감지는 외력 추정(#1) 이후에.
