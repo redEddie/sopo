@@ -24,13 +24,13 @@ joints:
     ids: [10, 11]
     reference_id: 11
     K: 4005
-    preload_ticks: 0           # anti-backlash: try 4 (mirror pushes 4 ticks against the reference)
+    preload_ticks: 4           # anti-backlash: try 4 (mirror pushes 4 ticks against the reference)
   - name: J3
     type: dual
     ids: [15, 16]
     reference_id: 16
     K: 4100
-    preload_ticks: 0
+    preload_ticks: 4
   - name: J4
     type: continuous           # 360 deg roll, cable-limited like J1. setup: cookbook/12_continuous_setup.py --id 19 --center
     motor_id: 19
@@ -70,5 +70,5 @@ rate_hz: 50
 # 초기화(examples/init.py): 자가진단 후 이 자세로 이동해 대기. 비어 있으면 현재 자세 유지.
 # 값은 reference 모터 틱. 연속 관절은 home_abs(2048) 기준 프레임으로 저장한다 (세션마다 바퀴 수가 달라도 같은 자세).
 # 측정: 토크 OFF로 자세를 만든 뒤 python cookbook/13_capture_pose.py --config configs/arm.yaml
-standby_pose: {J1: 2101, J2: 1026, J3: 3095, J4: 2089, J5: 2220, J6: 2733}
+standby_pose: {J1: 2033, J2: 1042, J3: 3059, J4: 2035, J5: 2176, J6: 2049}
 
