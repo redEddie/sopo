@@ -42,6 +42,7 @@ class ReflexConfig:
     err_ticks: int = 150
     t_error: float = 0.5
     disturb_pp: int = 40    # goal static 동안 0.5s 창의 위치 peak-to-peak가 이 이상이면 DISTURBANCE
+    disturb_settle_ticks: int = 20  # 창은 관절이 목표에 도착(|err| < 이 값)한 뒤부터 연다 — 마지막 접근 구간은 제외
     t_disturb: float = 0.5
     pair_tol: int = 60   # measured: free +-6, both motors saturated by a grab up to +21; a real fight is hundreds
     t_pair: float = 0.3  # must persist (gear deflection under load is transient)
@@ -247,9 +248,12 @@ class Reflex:
             # Commanded motion clears the window, so this never fires while the arm is being driven;
             # steady gravity sag has no swing, so it does not fire either.
             if prev_goal is not None and abs(tgt - prev_goal) <= 2:
-                state.hold_win.append((now, pos))
+                if not state.hold_win and err > self._cfg.disturb_settle_ticks:
+                    pass  # still approaching the (now static) goal - the step clamp left it up to 80 ticks ahead
+                else:
+                    state.hold_win.append((now, pos))
                 state.hold_win = [(t, q) for t, q in state.hold_win if now - t <= self._cfg.t_disturb]
-                if state.hold_win[-1][0] - state.hold_win[0][0] >= 0.8 * self._cfg.t_disturb:
+                if state.hold_win and state.hold_win[-1][0] - state.hold_win[0][0] >= 0.8 * self._cfg.t_disturb:
                     qs = [q for _, q in state.hold_win]
                     pp = max(qs) - min(qs)
                     if pp >= self._cfg.disturb_pp:

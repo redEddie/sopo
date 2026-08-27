@@ -228,6 +228,17 @@ def test_disturbance_when_shaken_while_holding():
         trips += r.update(now=i * 0.02, present={19: pos}, goal={19: 2000}, load={19: 60})
     assert [t.event for t in trips] == [Event.DISTURBANCE]
 
+    r3 = Reflex(LIMITS, PAIRS, ReflexConfig(disturb_pp=40))
+    trips = []
+    for i in range(15):                                  # goal just went static; joint still covers the last 80 ticks
+        trips += r3.update(now=i * 0.02, present={19: 2080 - min(80, 6 * i)}, goal={19: 2000}, load={19: 100})
+    for i in range(15, 60):                              # arrived: 5-tick overshoot then quiet
+        trips += r3.update(now=i * 0.02, present={19: 1995 + (i % 2)}, goal={19: 2000}, load={19: 20})
+    assert trips == []                                   # the approach is not a disturbance (blackbox 03:25)
+    for i in range(60, 100):                             # now shaken by hand
+        trips += r3.update(now=i * 0.02, present={19: 2000 + int(30 * math.sin(i * 0.8))}, goal={19: 2000}, load={19: 60})
+    assert [t.event for t in trips] == [Event.DISTURBANCE]
+
     r2 = Reflex(LIMITS, PAIRS, ReflexConfig())
     for i in range(40):                                  # steady 15-tick gravity sag: no swing
         assert r2.update(now=i * 0.02, present={19: 1985}, goal={19: 2000}, load={19: 60}) == []
