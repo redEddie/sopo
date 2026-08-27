@@ -31,11 +31,16 @@ sopo/            핵심 패키지
   safety.py        SafetyLimits + 토크 제한/과부하 보호/소프트 리밋/스텝 클램핑
   joints.py        관절 추상화 (single / dual 반전쌍 / 케이블 제한 continuous)
   reflex.py        호스트 측 충돌 리플렉스 (포화+정체 → 홀드 래칭, recover)
+  control.py       다관절 안전 제어 루프 (클램프 → 명령 → reflex → 홀드/복구)
+  sources.py       명령 소스 경계 (lerobot Teleoperator 구조): WaypointSource + 리더 암/정책 플레이스홀더
+  config.py        arm.yaml/calibration.yaml 로더
 cookbook/        Feetech 기초 조작 쿡북 — README.md 참조
                    (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정 → 위치 한계 실측 → 자중 토크 실측)
-examples/        (예정) run_waypoints.py — 다관절 웨이포인트 주행
+examples/
+  run_waypoints.py 다관절 웨이포인트 주행 (안전 루프의 첫 클라이언트)
 configs/
-  arm.example.yaml 암 정의(포트/ID/안전 제한) 예시
+  arm.yaml         이 암의 정의 (포트/관절/K/range_ticks/안전 기본값) — 커밋됨
+  waypoints.example.yaml 웨이포인트 예시
   calibration.yaml 실측 관절 한계/토크 캡 (05/06 스크립트가 생성, 실행 스크립트가 자동 적용)
 ```
 
@@ -58,9 +63,11 @@ python cookbook/04_set_motor_id.py --port /dev/ttyACM0 --current-id 1 --new-id 2
 python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 19
 python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 19 --save
 
-# 6. 관절 단위 이동 + 리플렉스 (설정: arm.example.yaml을 복사해 arm.yaml로)
-cp configs/arm.example.yaml configs/arm.yaml
+# 6. 관절 단위 이동 + 리플렉스 (설정: configs/arm.yaml — 이 암의 정의, 커밋됨)
 python cookbook/08_move_joint.py --config configs/arm.yaml --joint J4 --goal 2300 --torque-limit 150
+
+# 7. 다관절 웨이포인트 주행 (리플렉스 포함)
+python examples/run_waypoints.py --config configs/arm.yaml --waypoints configs/waypoints.example.yaml --verbose
 ```
 
 ## 안전 설계

@@ -30,7 +30,7 @@
 - [ ] 토크 제한 체감 테스트: 손으로 밀어 포화 확인 (`cookbook/03_torque_limits.py`)
 - [ ] 관절별 소프트 리밋 실측 (`05_find_limits.py`) — 완료: J4. 남음: J1, J2, J3, J5, J6
 - [ ] 자중 토크 실측 (`06_gravity_load.py`) — J1/J5/J6은 J6 장착 후 측정, **J2/J3/J4는 J5·J6 장착 전 값이라 재측정 필요**
-- [ ] 다관절 웨이포인트 주행 검증 (`examples/run_waypoints.py`, 예정) — 리더 암 없음
+- [ ] 다관절 웨이포인트 주행 하드웨어 검증 (`examples/run_waypoints.py`) — 리더 암 없음, 소스는 ActionSource로 교체 가능
 
 ## 2. Robot API/SDK (Franka의 libfranka 포지션)
 

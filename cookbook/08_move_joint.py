@@ -32,19 +32,7 @@ from sopo import (
 )
 
 
-def load_config(path: str) -> dict:
-    with open(path) as f:
-        cfg = yaml.safe_load(f)
-
-    calib_path = Path(path).parent / "calibration.yaml"
-    if calib_path.exists():
-        calib = yaml.safe_load(calib_path.read_text()) or {}
-        safety = cfg.setdefault("safety", {})
-        for key in ("position_limits", "torque_limits"):
-            if key in calib:
-                safety.setdefault(key, {}).update(calib[key])
-        print(f"캘리브레이션 적용: {calib_path}")
-    return cfg
+from sopo.config import load_arm_config as load_config  # arm:/구 leader·follower 스키마 모두 지원
 
 
 def build_joint(cfg: dict, joint_name: str):

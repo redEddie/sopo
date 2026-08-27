@@ -1,5 +1,5 @@
-# sopo 암 설정 예시 (리더 암 없음 — 웨이포인트/정책이 명령 소스).
-# 실제 암에 맞게 복사해서 수정하세요: cp configs/arm.example.yaml configs/arm.yaml
+# sopo 암 정의 — 이 레포가 다루는 바로 그 암. 코드의 일부이므로 커밋한다.
+# (리더 암 없음 — 명령 소스는 웨이포인트/정책, sopo/sources.py 참조)
 
 arm:
   port: /dev/ttyACM0        # udev 규칙 적용 시 /dev/sopo_follower
@@ -16,7 +16,7 @@ joints:
   - name: J1
     type: continuous
     motor_id: 1
-    range_ticks: 2600   # ±228°, 총 456° — 09로 실측한 값으로 교체
+    range_ticks: 2600   # ±228° (총 456°). 아직 미실측 — cookbook/09_continuous_angle.py로 재고 교체할 것
   - name: J2
     type: dual
     ids: [10, 11]

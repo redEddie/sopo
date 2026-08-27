@@ -161,7 +161,7 @@ def _clamp_ticks(value: int) -> int:
 
 
 def build_joints(configs: list[dict]) -> list[Joint]:
-    """Build Joint objects from a config list (see configs/arm.example.yaml)."""
+    """Build Joint objects from a config list (see configs/arm.yaml)."""
     joints: list[Joint] = []
     for cfg in configs:
         name = cfg["name"]

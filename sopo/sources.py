@@ -1,0 +1,153 @@
+"""명령 소스(ActionSource): 매 사이클 관절 목표 {관절이름: 틱}을 내놓는 것.
+
+lerobot의 `Teleoperator`(connect / get_action / disconnect) 경계를 그대로 따른다. 지금 구현된 건
+웨이포인트뿐이지만, 리더 암(SO-ARM/lerobot leader)이나 정책을 같은 자리에 끼울 수 있도록
+아래에 플레이스홀더를 주석으로 남긴다.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Protocol
+
+import yaml
+
+
+class ActionSource(Protocol):
+    name: str
+
+    def connect(self) -> None: ...
+
+    def get_action(self, present: dict[str, int], now: float) -> dict[str, int]:
+        """현재 관절 위치와 시각을 받아 관절 목표를 돌려준다. 빠진 관절은 현재 위치 유지."""
+        ...
+
+    def is_done(self) -> bool: ...
+
+    def disconnect(self) -> None: ...
+
+
+@dataclass
+class WaypointSource:
+    """관절 목표 리스트를 순서대로. 각 목표에 도달(지정 관절 모두 arrival_ticks 이내)하고
+    dwell_s만큼 머문 뒤 다음으로 넘어간다."""
+
+    waypoints: list[dict[str, int]]
+    dwell_s: float = 1.0
+    loop: bool = False
+    arrival_ticks: int = 30
+    name: str = "waypoints"
+    _index: int = field(default=0, init=False)
+    _arrived_at: float | None = field(default=None, init=False)
+    _done: bool = field(default=False, init=False)
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "WaypointSource":
+        data = yaml.safe_load(Path(path).read_text()) or {}
+        wps = [{str(k): int(v) for k, v in wp.items()} for wp in data["waypoints"]]
+        return cls(wps, dwell_s=float(data.get("dwell_s", 1.0)), loop=bool(data.get("loop", False)))
+
+    @property
+    def index(self) -> int:
+        return self._index
+
+    def connect(self) -> None:
+        if not self.waypoints:
+            raise ValueError("웨이포인트가 비어 있습니다.")
+
+    def get_action(self, present: dict[str, int], now: float) -> dict[str, int]:
+        if self._done:
+            return dict(present)
+        wp = self.waypoints[self._index]
+        unknown = set(wp) - set(present)
+        if unknown:
+            raise KeyError(f"웨이포인트 {self._index}에 없는 관절 이름: {sorted(unknown)}")
+        if all(abs(present[n] - wp[n]) < self.arrival_ticks for n in wp):
+            if self._arrived_at is None:
+                self._arrived_at = now
+            elif now - self._arrived_at >= self.dwell_s:
+                self._advance()
+                wp = self.waypoints[self._index] if not self._done else {}
+        else:
+            self._arrived_at = None
+        return {n: wp.get(n, present[n]) for n in present}
+
+    def _advance(self) -> None:
+        self._arrived_at = None
+        if self._index + 1 < len(self.waypoints):
+            self._index += 1
+        elif self.loop:
+            self._index = 0
+        else:
+            self._done = True
+
+    def is_done(self) -> bool:
+        return self._done
+
+    def disconnect(self) -> None:
+        pass
+
+
+# ---------------------------------------------------------------------------
+# 플레이스홀더 1: 리더 암 (lerobot Teleoperator / SO-ARM leader 구조)
+#
+# lerobot의 SO100/SO101 leader는 팔로워와 같은 종류의 모터를 단 암을 손으로 움직여
+# 그 관절각을 액션으로 내보낸다. 핵심 구조:
+#   - connect(calibrate=True): 자기 버스 연결 → 캘리브레이션 없으면 calibrate() → configure()
+#   - configure(): 리더는 항상 토크 OFF (bus.disable_torque) — Trossen puppet의 master_modes와 동일
+#   - get_action(): bus.sync_read("Present_Position") → {"<motor>.pos": 값}
+#   - 리더/팔로워 조립 차이는 캘리브레이션(homing offset + 관절 범위)으로 정규화([-100,100] 또는 [0,100])해서
+#     흡수한다. 팔로워는 같은 정규화의 역변환으로 목표를 만든다. sopo는 틱 단위라 관절별 invert/offset을
+#     두거나, SopoRobot 캘리브레이션 층(틱 ↔ 정규화)이 생기면 그걸 쓴다.
+#
+# class LeaderArmSource:
+#     name = "leader_arm"
+#
+#     def __init__(self, port: str, joints_cfg: list[dict], invert: set[str] = (), offsets: dict[str, int] = None):
+#         from .bus import FeetechBus
+#         from .joints import build_joints
+#         self.bus = FeetechBus(port)
+#         self.joints = build_joints(joints_cfg)      # 리더도 같은 관절 구조(듀얼/연속 포함)라고 가정
+#         self.invert, self.offsets = set(invert), dict(offsets or {})
+#
+#     def connect(self) -> None:
+#         self.bus.connect()
+#         self.bus.disable_torque([mid for j in self.joints for mid in j.motor_ids])   # 손으로 움직여야 하므로
+#
+#     def get_action(self, present, now):
+#         leader = {j.name: j.read(self.bus) for j in self.joints}                     # 연속 관절은 논리각
+#         goal = {}
+#         for name, pos in leader.items():
+#             if name in self.invert:
+#                 pos = 4095 - pos
+#             goal[name] = pos + self.offsets.get(name, 0)
+#         return goal          # 클램프(관절 리밋·스텝·J1 범위)는 control 루프가 한다
+#
+#     def is_done(self) -> bool:
+#         return False         # 사용자가 Ctrl+C 할 때까지
+#
+#     def disconnect(self) -> None:
+#         self.bus.disconnect()
+#
+# 사용: run_waypoints.py의 WaypointSource 자리에 LeaderArmSource(port=..., joints_cfg=cfg["joints"])를 넣으면
+#       그대로 리더-팔로워 미러가 된다. 소프트스타트(첫 목표까지 느린 스텝)도 그대로 적용된다.
+#
+# ---------------------------------------------------------------------------
+# 플레이스홀더 2: 정책 (lerobot policy / VLA)
+#
+# lerobot 추론 루프: obs = robot.get_observation(); action = policy.select_action(obs); robot.send_action(action)
+# 정책은 10~30 Hz로 액션(청크)을 내므로, 이 소스는 마지막 액션을 보간해 50 Hz 루프에 내보내야 한다
+# (docs/architecture.md L4). 정책이 멈추면 get_action이 present(홀드)를 돌려주고 워치독이 처리한다.
+#
+# class PolicySource:
+#     name = "policy"
+#     def __init__(self, policy, observe, hz=30): ...
+#     def connect(self): ...
+#     def get_action(self, present, now):
+#         if now - self._last >= 1 / self.hz:
+#             self._target = denormalize(self.policy.select_action(self.observe()))
+#             self._last = now
+#         return interpolate(present, self._target, ...)
+#     def is_done(self): return False
+#     def disconnect(self): ...

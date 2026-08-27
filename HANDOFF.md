@@ -94,7 +94,7 @@
    - `calibration.yaml`의 ID 1 position_limits는 사용하지 않는다(삭제됨). J1 한계는 yaml `range_ticks`로만.
 2. `DualMotorJoint`: 미러 모터도 읽어서 `ref + mirror`가 K ± 20틱 안인지 매 사이클 검사, 벗어나면 경고 후 정지(쌍이 싸우는 상태). 미러 목표도 자기 모터의 position_limits로 클램프. K는 yaml 상수 대신 05가 쌍 측정 시 `pos_a + pos_b` 중앙값을 calibration.yaml `pair_constants`에 기록하고 거기서 읽는다.
 3. 성능/원자성: Joint가 `goals(logical) -> {motor_id: tick}` 와 `motor_ids`만 제공하고, 루프에서 전 모터 `sync_read` 1회 → 관절 변환 → 클램프 → `sync_write` 1회. 쌍의 두 목표가 같은 패킷에 실린다.
-4. 오타: mirror.py "폴터"→"폴더", "낼어올"→"내려올"; arm.example.yaml "폭더"→"폴더". 예시의 `position_limits: {1: [0, 4095], ...}`는 삭제 (리밋 해제를 권장하는 모양이 됨).
+4. 오타: mirror.py "폴터"→"폴더", "낼어올"→"내려올"; arm.yaml "폭더"→"폴더". 예시의 `position_limits: {1: [0, 4095], ...}`는 삭제 (리밋 해제를 권장하는 모양이 됨).
 5. 위 수정 후 `python -m py_compile`, `--help`, 그리고 하드웨어 없이 `build_joints` + 클램프 로직 단위 테스트를 추가한 뒤 커밋. `cookbook/04_set_motor_id.py`와 README 변경도 같은 커밋에 포함.
 
 ### 리뷰 1 처리 결과 (Claude가 직접 반영, 커밋 9f0c996)
@@ -117,7 +117,7 @@
 
 ### 변경 (2026-08-27): 리더 암 없음 — mirror.py 삭제
 - `examples/mirror.py`와 yaml의 `leader/follower` 섹션 제거. 설정은 `arm: {port, baudrate}` 하나. 08은 이미 반영됨.
-- **새 작업**: `examples/run_waypoints.py` — 삭제된 mirror_loop(커밋 71025a7의 `examples/mirror.py`)에서 리더 읽기만 빼고
+- ~~새 작업~~ **완료(Claude, 2026-08-27)**: `examples/run_waypoints.py` + `sopo/control.py`(안전 루프) + `sopo/sources.py`(ActionSource, 리더 암/정책 플레이스홀더) + `sopo/config.py`(구 스키마 호환 로더). 원래 메모: 삭제된 mirror_loop(커밋 71025a7의 `examples/mirror.py`)에서 리더 읽기만 빼고
   안전 루프(관절 read → clamp_joint_goal → command, reflex update/hold/recover, 온도, 통신)를 그대로 옮긴다.
   명령 소스는 `configs/waypoints.example.yaml`의 관절 목표 리스트(`- {J2: 2000, J4: 2300}` …)를 순서대로, 각 목표에 도달(오차 < 30틱)하면 다음으로.
   소프트스타트(첫 목표까지 스텝 20)는 유지. 리더 관련 `invert/offsets/map_leader_to_follower`는 버린다.
