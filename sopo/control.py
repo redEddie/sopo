@@ -169,11 +169,22 @@ def run_control_loop(
     verbose: bool = False,
     blackbox: Blackbox | None = None,
     status_inline: bool = False,
+    dump_on_exit: bool = False,
 ) -> None:
     """source가 끝나거나(is_done) 사용자가 종료할 때까지 돈다. 토크는 켜진 채로 돌려받는다."""
+    try:
+        _run(bus, joints, limits, joint_limits, reflex, source, rate_hz, on_reflex, status_every, verbose, blackbox, status_inline)
+    finally:
+        if blackbox and dump_on_exit:
+            path = blackbox.dump('exit')
+            if path:
+                print(f"blackbox saved: {path}", file=sys.stderr)
+
+
+def _run(bus, joints, limits, joint_limits, reflex, source, rate_hz, on_reflex, status_every, verbose, blackbox, status_inline):
     ids = [mid for j in joints for mid in j.motor_ids]
     period = 1.0 / rate_hz
-    soft = True  # 첫 목표(또는 복구 직후)까지는 느린 스텝
+    soft = True
     last_temp = last_status = 0.0
     goal: dict[str, int] = {}
     load: dict[int, int] = {}
@@ -265,6 +276,9 @@ def run_control_loop(
         if verbose and t0 - last_status >= status_every:
             last_status = t0
             line = getattr(source, "last_status", "") or "  ".join(f"{n}:{present[n]}->{goal[n]}" for n in goal)
+            raws = "  ".join(f"{j.name} raw={j._last_raw} turn={j.turn_count}" for j in joints if isinstance(j, ContinuousJoint))
+            if raws:
+                line += "  | " + raws
             text = f"[{source.name}] {line}  | {volt_span[0]:.1f}-{volt_span[1]:.1f}V | cycle {elapsed * 1e3:.1f}ms"
             if status_inline:
                 print("\r" + text.ljust(140), end="", flush=True)  # 한 줄에서 갱신

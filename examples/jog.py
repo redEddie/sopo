@@ -117,7 +117,7 @@ def main() -> None:
         with reader:
             run_control_loop(bus, joints, limits, joint_limits, reflex, source,
                              rate_hz=cfg.get("rate_hz", 50), on_reflex=on_reflex, verbose=True, status_every=0.1, status_inline=True,
-                             blackbox=Blackbox(ids, rate_hz=cfg.get("rate_hz", 50)))
+                             blackbox=Blackbox(ids, rate_hz=cfg.get("rate_hz", 50)), dump_on_exit=True)
     except KeyboardInterrupt:
         print("\nquit requested")
     except RuntimeError as e:
