@@ -27,6 +27,7 @@ def main() -> None:
     parser.add_argument("--config", default="configs/arm.yaml")
     parser.add_argument("--hold", type=float, default=None, help="seconds to hold standby, then torque off (default: until Ctrl+C)")
     parser.add_argument("--skip-test", action="store_true")
+    parser.add_argument("--yes", action="store_true", help="skip the cable confirmation prompt")
     args = parser.parse_args()
 
     cfg = load_arm_config(args.config)
@@ -41,6 +42,13 @@ def main() -> None:
     for w in verify_eprom(bus, limits, ids):
         print(f"warn (EPROM drift): {w}", file=sys.stderr)
     try:
+        # 연속 관절의 바퀴 수는 전원을 켤 때 0으로 가정한다 (엔코더는 한 바퀴 안의 절대각만 안다).
+        # 그 가정은 조작자만 확인할 수 있다: 케이블이 풀린 상태(+-180 deg 안)인지.
+        cont = [j.name for j in joints if getattr(j, "firmware_multiturn", False)]
+        if cont and not args.yes:
+            ans = input(f"Continuous joints {cont}: confirm cables are untwisted (within +-180 deg of relaxed) [y/N]: ").strip().lower()
+            if ans != "y":
+                raise RuntimeError("cable state not confirmed - untwist the joints with torque off, then rerun")
         apply_safety(bus, ids, limits)
         bus.enable_torque(ids)
         if not args.skip_test:
