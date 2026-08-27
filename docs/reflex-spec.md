@@ -26,7 +26,7 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 | (가속 유예) | 목표가 `accel_step` 이상 바뀐 직후 `t_accel` 동안은 COLLISION 판정 보류 | accel_step 40틱, t_accel 0.2 s | Franka의 acceleration 임계값 상향에 대응 |
 | TRACKING_ERROR | `abs(goal-present) > err_ticks` 가 `t_error` 이상 지속 | err_ticks 150(≈13°), t_error 0.5 s | 캡 부족·걸림·미응답 통합 감지 |
 | PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` | pair_tol 20틱 | 쌍이 서로 싸움 |
-| COMM_LOSS | 연속 통신 실패 ≥ `comm_fail_max` | 5 | 기존 mirror 규칙 |
+| COMM_LOSS | 연속 통신 실패 ≥ `comm_fail_max` | 5 | 연속 오류 5회 |
 | OVERTEMP | 온도 ≥ `temp_stop` (경고는 `temp_warn`) | 70 °C / 65 °C | 모터 Max_Temperature_Limit 기본 70 |
 
 `cap`은 `SafetyLimits.torque_for(motor_id)`. 부하 부호는 미는 방향 → `backoff` 방향 결정에 쓴다.
