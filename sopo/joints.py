@@ -96,10 +96,12 @@ class ContinuousJoint:
     The turn count lives in memory only, so the program must be started with the
     cable relaxed (that pose becomes the centre of the allowed range).
 
-    LIMITATION: in single-turn firmware mode the servo never crosses raw 4095/0 - it
-    would take the long way round. Keep home at raw ~2048 (cookbook/09 --center) and
-    range_ticks <= 2000 so the used range never contains the raw wrap. Full >360 deg
-    needs the firmware multi-turn mode (issue #8).
+    Firmware modes (verified on sm8512bl, 2026-08-28):
+      single-turn (Phase bit4 off): the servo never crosses raw 4095/0 - it takes the long way
+        round, which with a step-clamped goal shows up as a +-5 deg chatter at the seam.
+      multi-turn (Phase bit4 on, Min/Max_Position_Limit 0/0): position is reported and
+        accepted beyond 0..4095 continuously (+415 deg measured). Use firmware_multiturn=True.
+        The turn count resets at power-on, so the start pose is still the range centre.
     """
 
     def __init__(self, name: str, motor_id: int, range_ticks: int | None = None, firmware_multiturn: bool = False):

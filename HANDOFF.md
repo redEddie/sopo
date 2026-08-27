@@ -90,7 +90,7 @@
    - 리더와 팔로워 J1 모두 같은 규칙. 리더 J1이 범위를 넘으면 팔로워는 경계에 머문다.
 2. **turn_count 파일 저장(`state_path`, `*_state.yaml`, `state_dir`) 제거.** 토크 OFF 중 사람이 랩 너머로 돌리면 파일 값이 어긋나
    범위 클램프가 엉뚱한 곳에서 걸린다. 메모리에서만 세고 시작 시 0. `MAX_SINGLE_MOVE=4095`는 의미가 없으니 삭제(스텝 클램프가 이미 막는다).
-   - 참고(나중에 시험): sm8512bl은 Phase bit4를 켜면 펌웨어가 멀티턴 위치를 직접 추적한다(전원 켜진 동안). 소프트웨어 언랩 대신 쓸 수 있는지, Goal_Position이 4095 초과 값을 받는지 확인 후 결정. 지금은 소프트웨어 언랩 유지.
+   - **확정(2026-08-28)**: Phase bit4 ON + Min/Max_Position_Limit 0/0 = 펌웨어 멀티턴. 4095 초과 목표를 그대로 받고 넘는다. `firmware_multiturn: true`로 운용 중.
    - `calibration.yaml`의 ID 1 position_limits는 사용하지 않는다(삭제됨). J1 한계는 yaml `range_ticks`로만.
 2. `DualMotorJoint`: 미러 모터도 읽어서 `ref + mirror`가 K ± 20틱 안인지 매 사이클 검사, 벗어나면 경고 후 정지(쌍이 싸우는 상태). 미러 목표도 자기 모터의 position_limits로 클램프. K는 yaml 상수 대신 05가 쌍 측정 시 `pos_a + pos_b` 중앙값을 calibration.yaml `pair_constants`에 기록하고 거기서 읽는다.
 3. 성능/원자성: Joint가 `goals(logical) -> {motor_id: tick}` 와 `motor_ids`만 제공하고, 루프에서 전 모터 `sync_read` 1회 → 관절 변환 → 클램프 → `sync_write` 1회. 쌍의 두 목표가 같은 패킷에 실린다.

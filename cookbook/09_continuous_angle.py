@@ -47,7 +47,7 @@ def main() -> None:
         with bus.eprom_unlocked(args.id):
             bus.write("Homing_Offset", args.id, new)
         print(f"Homing_Offset {old} -> {new}: reading {raw} -> {bus.read('Present_Position', args.id)} (target 2048)")
-        print("single-turn firmware cannot cross 4095/0: keep range_ticks <= 2000 in arm.yaml until multi-turn mode (#8) is verified")
+        print("note: only needed in single-turn firmware mode; J1 runs multi-turn (Phase bit4, limits 0/0) and does not need centering")
     start_raw = last_raw = bus.read("Present_Position", args.id)
     turns = 0
     lo = hi = 0.0
