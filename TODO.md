@@ -67,3 +67,16 @@ Franka Research 3의 안전 계층을 sopo 수준에서 재현:
       소프트웨어로 대체 불가한 유일한 안전 계층 (Franka의 외부 활성화 장치/사용자 정지 버튼에 해당).
       설치 전까지는 사람 근처 운용 시 토크 캡 ≤ 300‰ + 전원 스위치 손 닿는 곳에 두기로 대체.
       Present_Voltage로 전원 차단을 감지해 소프트웨어 상태도 STOPPED로 동기화할 것.
+
+## GitHub 이슈 (libfranka 수준으로 가기 위해 지금은 미룬 것 — 전제가 갖춰지면 착수)
+
+- #1 외력 토크 추정 τ_ext (URDF/룩업) — https://github.com/redEddie/sopo/issues/1
+- #2 URDF + 기구학 — https://github.com/redEddie/sopo/issues/2
+- #3 sopod 하위 제어기 데몬 + IPC — https://github.com/redEddie/sopo/issues/3
+- #4 reflex contact 단계 — https://github.com/redEddie/sopo/issues/4
+- #5 물리 E-stop — https://github.com/redEddie/sopo/issues/5
+- #6 레이트 리미터 (속도/가속 프로파일) — https://github.com/redEddie/sopo/issues/6
+- #7 캡·리밋 EPROM 영구화 — https://github.com/redEddie/sopo/issues/7
+- #8 J1 펌웨어 멀티턴 모드 시험 — https://github.com/redEddie/sopo/issues/8
+- #9 SopoRobot + lerobot 어댑터 — https://github.com/redEddie/sopo/issues/9
+
