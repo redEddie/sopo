@@ -251,6 +251,14 @@ python cookbook/15_set_pid.py --port /dev/ttyACM0 --ids 19 --p 48 --d 48  # 한 
 
 흔들림 대응 순서: ① `arm.yaml`의 `max_relative_target` 80→40, `acceleration` 30→15 (출발·정지 충격 감소) ② 듀얼 관절 `preload_ticks: 4` (두 모터가 서로 밀어 백래시 제거) ③ P/D 상향 (캡 안에서만 효과) ④ 캡 상향은 최후 — 캡이 곧 충돌 시 사람이 받는 힘. 근본적으로는 외력 추정(#1)이 있어야 강성과 안전을 동시에 얻는다.
 
+### 16_wobble_test.py — 흔들림 측정 (전/후 비교용)
+
+```bash
+python cookbook/16_wobble_test.py --config configs/arm.yaml --move J2:+300,J3:+300 --cycles 3
+```
+
+대기 자세에서 지정 관절을 들었다 내리는 왕복을 반복하며 모터별로 밀림(`disturb_max/rms`: 다른 관절이 움직이는 동안 |목표−실측|)과 도착 후 진동(`settle_pp/osc/t`: 1초 창의 피크-투-피크·반전 횟수·정착 시간)을 표로 낸다. `preload_ticks`·PID·가속을 바꾸기 전후에 같은 명령으로 돌려 숫자를 비교한다.
+
 ---
 
 ## 5. 트러블슈팅
