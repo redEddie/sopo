@@ -54,6 +54,12 @@ def main() -> None:
         if not args.skip_test:
             self_test(bus, joints, limits)
         standby = {str(k): int(v) for k, v in (cfg.get("standby_pose") or {}).items()}
+        # standby of continuous joints is stored in the home_abs frame; shift into this session's turn
+        from sopo.control import read_joints
+        read_joints(bus, joints)  # establishes home for continuous joints
+        for j in joints:
+            if getattr(j, "home_abs", None) is not None and j.name in standby:
+                standby[j.name] += j.home - j.home_abs
         source = WaypointSource([standby] if standby else [{}], dwell_s=args.hold if args.hold else 1e9)
         source.connect()
         print("standby:", standby or "(hold current pose)")

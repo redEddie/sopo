@@ -74,6 +74,7 @@ python cookbook/08_move_joint.py --config configs/arm.yaml --joint J4 --goal 230
 python examples/run_waypoints.py --config configs/arm.yaml --waypoints configs/waypoints.example.yaml --verbose
 
 # 7.5 초기화: 자가진단 후 standby_pose(arm.yaml)로 이동해 대기 — 제어 세션 시작 전 루틴
+python cookbook/13_capture_pose.py --config configs/arm.yaml   # 토크 OFF로 자세 만든 뒤 1회: standby_pose 기록
 python examples/init.py --config configs/arm.yaml
 
 # 8. 키보드 조그 (←/→ 이동, ↑/↓ 관절, space 홀드, q 종료)

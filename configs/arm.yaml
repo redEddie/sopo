@@ -16,7 +16,7 @@ joints:
   - name: J1
     type: continuous
     motor_id: 1
-    range_ticks: 1900          # +-167 deg around home: cable protection. < 2048 so 'nearest 2048' never picks the next turn on restart
+    range_ticks: 2000          # +-176 deg around home (silent clamp, brake zone from 158 deg). < 2048 so 'nearest 2048' never flips a turn on restart
     firmware_multiturn: true   # Phase bit4 ON + Min/Max_Position_Limit 0/0: servo counts turns itself
     home_abs: 2048             # cable-relaxed pose reads 2048 (cookbook/09 --center); home = nearest copy of it
   - name: J2
@@ -32,7 +32,7 @@ joints:
   - name: J4
     type: continuous           # 360 deg roll, cable-limited like J1. setup: cookbook/12_continuous_setup.py --id 19 --center
     motor_id: 19
-    range_ticks: 1900
+    range_ticks: 2000
     firmware_multiturn: true
     home_abs: 2048
   - name: J5
@@ -66,6 +66,7 @@ safety:
 rate_hz: 50
 
 # 초기화(examples/init.py): 자가진단 후 이 자세로 이동해 대기. 비어 있으면 현재 자세 유지.
-# 값은 reference 모터 틱 (연속 관절은 home 기준 논리각 = 보통 2048 근처). jog.py 상태줄에서 읽어 채운다.
+# 값은 reference 모터 틱. 연속 관절은 home_abs(2048) 기준 프레임으로 저장한다 (세션마다 바퀴 수가 달라도 같은 자세).
+# 측정: 토크 OFF로 자세를 만든 뒤 python cookbook/13_capture_pose.py --config configs/arm.yaml
 standby_pose: {}
 

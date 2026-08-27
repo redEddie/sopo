@@ -224,6 +224,16 @@ python cookbook/09_continuous_angle.py --port /dev/ttyACM0 --id 19     # 손으�
 
 센터링(현재 자세 = 2048, 단일턴 모드에서) → 펌웨어 멀티턴(Phase bit4 ON, Min/Max_Position_Limit 0/0) 순서로 기록한다. 멀티턴 모드에서는 서보가 4095/0 경계를 스스로 넘어 위치를 연속으로 보고한다. 단일턴 모드는 경계에서 긴 길로 돌아 ±5° 떨림이 난다(실측). 멀티턴 모드에서 `Homing_Offset`을 바꾸면 예측 불가하므로 센터링은 반드시 먼저. 전원을 끄면 바퀴 수가 초기화되므로 `arm.yaml`의 `home_abs: 2048`과 `range_ticks: 2048`(±180°)로 가장 가까운 2048을 집으로 잡아 케이블을 보호한다.
 
+### 13_capture_pose.py — 대기 자세 기록
+
+```bash
+# 토크 OFF 상태에서 손으로 원하는 자세를 만든 뒤
+python cookbook/13_capture_pose.py --config configs/arm.yaml            # arm.yaml의 standby_pose 갱신
+python cookbook/13_capture_pose.py --config configs/arm.yaml --key rest_pose
+```
+
+관절 값을 읽어 `arm.yaml`에 한 줄로 기록한다. 연속 관절은 `home_abs`(2048) 기준 프레임으로 저장하므로 전원을 껐다 켜서 바퀴 수가 달라져도 같은 물리 자세를 가리킨다. `examples/init.py`가 자가진단 후 이 자세로 이동한다.
+
 ---
 
 ## 5. 트러블슈팅
