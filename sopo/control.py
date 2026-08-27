@@ -18,7 +18,7 @@ from typing import Callable
 
 from .bus import FeetechBus
 from .joints import ContinuousJoint, DualMotorJoint, Joint
-from .reflex import Mode, Reflex
+from .reflex import Event, Mode, Reflex, Trip
 from .safety import SafetyLimits
 from .sources import ActionSource
 
@@ -97,6 +97,31 @@ def motor_goals(joints: list[Joint], joint_goals: dict[str, int]) -> dict[int, i
 
 def hold_joint_goals(joints: list[Joint], hold: dict[int, int]) -> dict[str, int]:
     return {j.name: hold[j.reference_id if isinstance(j, DualMotorJoint) else j.motor_ids[0]] for j in joints}
+
+
+EVENT_TEXT = {
+    Event.COLLISION: ("충돌/막힘", "허용 최대 힘(캡)으로 밀었지만 목표 쪽으로 거의 못 감",
+                      "사람·장애물이면 치우고 [r] 복구. 자유 이동 중에도 반복되면 캡이 부족한 것 — 캡을 올리거나 속도(스텝)를 낮추세요"),
+    Event.TRACKING_ERROR: ("추종 오차", "목표와 실측 위치 차이가 오래 큼",
+                           "캡 부족·걸림·모터 무응답 확인 후 [r] 복구"),
+    Event.PAIR_MISMATCH: ("듀얼 쌍 불일치", "두 모터 위치 합이 K에서 벗어남 — 쌍이 서로 싸우거나 한쪽이 미끄러짐",
+                          "토크 끄고 두 모터 케이블·혼 고정 확인, K 재측정"),
+    Event.JOINT_LIMIT: ("리밋 이탈", "측정 위치가 소프트 리밋 밖에 머묾 — 외력으로 밀렸거나 캡 부족으로 처짐",
+                        "손으로 범위 안으로 되돌린 뒤 [r] 복구"),
+    Event.COMM_LOSS: ("통신 두절", "버스 응답 연속 실패", "케이블·전원 확인 후 재시작 (토크 해제됨)"),
+    Event.OVERTEMP: ("과열", "모터 온도가 정지 임계값 초과", "식힌 뒤 재시작 (토크 해제됨)"),
+}
+
+
+def describe_trip(trip: Trip, joints: list[Joint]) -> str:
+    """리플렉스 이벤트를 관절 이름·종류·의미·조치로 풀어 쓴다."""
+    name_of = {mid: j.name for j in joints for mid in j.motor_ids}
+    where = f"{name_of.get(trip.motor_id, '?')} (ID {trip.motor_id})" if trip.motor_id is not None else "전체"
+    kind, meaning, action = EVENT_TEXT.get(trip.event, (trip.event.value, "", ""))
+    return (f"[리플렉스] {kind} — {where}\n"
+            f"   측정: {trip.detail}\n"
+            f"   의미: {meaning}\n"
+            f"   조치: {action}")
 
 
 def prompt_recover(bus: FeetechBus, joints: list[Joint], reflex: Reflex) -> str:
@@ -210,7 +235,7 @@ def run_control_loop(
             mg = motor_goals(joints, goal)
             trips = reflex.update(t0, rp, mg, load, temps=temps, comm_ok=comm_ok)
             for trip in trips:
-                print(f"[!] {trip.event.value}: {trip.detail}", file=sys.stderr)
+                print("\n" + describe_trip(trip, joints), file=sys.stderr)
             for w in reflex.warnings():
                 print(f"경고: {w}", file=sys.stderr)
             if blackbox:

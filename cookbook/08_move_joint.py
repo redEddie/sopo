@@ -32,7 +32,8 @@ from sopo import (
 )
 
 
-from sopo.config import load_arm_config as load_config  # arm:/구 leader·follower 스키마 모두 지원
+from sopo.config import load_arm_config as load_config
+from sopo.control import describe_trip  # arm:/구 leader·follower 스키마 모두 지원
 
 
 def build_joint(cfg: dict, joint_name: str):
@@ -160,7 +161,7 @@ def main() -> None:
 
             trips = reflex.update(now, reflex_present, goal, load)
             for trip in trips:
-                print(f"  [!] {trip.event.value}: {trip.detail}", file=sys.stderr)
+                print("\n" + describe_trip(trip, [joint]), file=sys.stderr)
 
             if reflex.mode is Mode.STOPPED:
                 print("STOPPED: 토크를 해제하고 종료합니다.", file=sys.stderr)
@@ -183,7 +184,7 @@ def main() -> None:
                 temps = {mid: bus.read("Present_Temperature", mid) for mid in motor_ids}
                 trips = reflex.update(now, reflex_present, goal, load, temps=temps)
                 for trip in trips:
-                    print(f"  [!] {trip.event.value}: {trip.detail}", file=sys.stderr)
+                    print("\n" + describe_trip(trip, [joint]), file=sys.stderr)
                 for w in reflex.warnings():
                     print(f"  [경고] {w}", file=sys.stderr)
                 if reflex.mode is Mode.STOPPED:
