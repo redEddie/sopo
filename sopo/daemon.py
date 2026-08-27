@@ -246,6 +246,11 @@ class Daemon:
         cmd = msg.get("cmd")
         if cmd == "status":
             return {"ok": True, "state": self._state(0.0, 0.0)}
+        # Latched errors must be acknowledged: only 'recover' leads back to MOVE (Franka: automaticErrorRecovery).
+        # Dropping torque (idle/guiding) is always allowed.
+        if self.mode is ArmMode.REFLEX and cmd in ("move", "torque_on", "init", "goto"):
+            why = self.last_trips[-1] if self.last_trips else "reflex"
+            return {"ok": False, "error": f"REFLEX latched ({why}) - run 'recover' first, or 'idle' to drop torque"}
         if cmd in ("move", "torque_on"):
             if self.mode is ArmMode.STOPPED:
                 return {"ok": False, "error": "STOPPED: restart the daemon"}

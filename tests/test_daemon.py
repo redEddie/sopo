@@ -131,3 +131,16 @@ def test_daemon_init_runs_self_test_then_standby(running_daemon):
     time.sleep(1.0)
     s = c.state(1.0)
     assert s["mode"] == "move" and abs(s["joints"]["J4"]["pos"] - 2300) <= 30
+
+
+def test_reflex_latch_requires_explicit_recover(running_daemon):
+    d, c = running_daemon
+    assert c.command("move")["ok"]
+    d.mode = daemon_mod.ArmMode.REFLEX          # simulate a latched trip
+    d.last_trips = ["[REFLEX] COLLISION J4 (ID 19): test"]
+    for cmd in ("move", "init"):
+        r = c.command(cmd)
+        assert r["ok"] is False and "recover" in r["error"]
+    assert c.command("goto", action={"J4": 2300})["ok"] is False
+    assert c.command("idle")["ok"] and d.mode.value == "idle"   # dropping torque always allowed
+
