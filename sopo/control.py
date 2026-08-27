@@ -223,6 +223,9 @@ def _run(bus, joints, limits, joint_limits, reflex, source, rate_hz, on_reflex, 
                 soft = False
                 print("soft start done")
             rp = reflex_present_view(bus, joints, present)
+        except KeyboardInterrupt:
+            bus.port.clearPort()  # 트랜잭션 도중 중단: 수신 버퍼 정리 후 상위로
+            raise
         except Exception as e:  # comm failure or garbled packet: never let one cycle kill the loop
             comm_ok = False
             print(f"comm error: {e}", file=sys.stderr)

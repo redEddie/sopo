@@ -60,16 +60,27 @@ class FeetechBus:
             still_on = self.torque_off_verified(disable_torque_ids)
             if still_on:
                 import sys
-                print(f"!!! TORQUE STILL ON for motors {still_on} - run: python cookbook/11_torque_off.py", file=sys.stderr)
+                print(f"!!! torque-off NOT VERIFIED for motors {still_on} (broadcast off was sent) - check with: python cookbook/11_torque_off.py", file=sys.stderr)
         self.port.closePort()
 
     def torque_off_verified(self, motor_ids: list[int], attempts: int = 3) -> list[int]:
-        """Disable torque with retries and read-back. Returns ids that are still enabled."""
+        """Disable torque robustly. Returns ids whose torque-off could not be verified.
+
+        1. Broadcast Torque_Enable=0 with sync_write first: it needs no reply, so it reaches the
+           motors even when the receive path is broken (e.g. Ctrl+C mid-transaction left junk in
+           the input buffer).
+        2. Then per motor: clear the port buffer, write, read back, retry.
+        """
+        try:
+            self.sync_write("Torque_Enable", {mid: 0 for mid in motor_ids})
+        except Exception:
+            pass
         still_on = []
         for motor_id in motor_ids:
             ok = False
             for _ in range(attempts):
                 try:
+                    self.port.clearPort()
                     self.write("Torque_Enable", motor_id, 0)
                     self.write("Lock", motor_id, 0)
                     if self.read("Torque_Enable", motor_id) == 0:
