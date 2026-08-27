@@ -37,7 +37,7 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 1. COLLISION / TRACKING_ERROR / PAIR_MISMATCH → `Mode.REFLEX`.
    호출자는 `hold_targets(present)`를 받아 **1회 sync_write**(목표=현재 실측). 옵션 `backoff_ticks`(기본 0, 권장 30~50)면
    충돌 관절만 부하 반대 방향으로 그만큼 물러난 목표. 이후 `update()`는 계속 호출하되 명령은 거부.
-2. COMM_LOSS / OVERTEMP → `Mode.STOPPED`. 호출자는 토크 해제("암이 내려올 수 있음" 경고). 복구 불가, 프로그램 재시작.
+2. COMM_LOSS / OVERTEMP → `Mode.STOPPED`. 호출자는 **홀드(freeze)** — 토크를 끄지 않는다 (#10, Cat 2). 과열은 펌웨어 보호에 맡기고 `idle`로만 해제.
 3. `recover(present, load)`: 전 모터 `abs(load) < 0.5*cap` 이고 오차 < 30틱일 때만 `Mode.MOVE`로 복귀, 아니면 False와 사유.
    사용자 입력('r')로만 호출. 자동 복구 없음.
 

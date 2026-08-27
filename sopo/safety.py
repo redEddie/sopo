@@ -57,7 +57,14 @@ class SafetyLimits:
     # Franka의 position-based velocity limit 단순판: 리밋(또는 J1 케이블 범위)까지 남은 거리가
     # brake_zone_ticks 안이면 허용 스텝을 거리에 비례해 줄인다 (하한 brake_min_step). 도달 전에 감속.
     brake_zone_ticks: int = 200
-    brake_min_step: int = 30  # >= ~30: below that the P controller output (~8 permille/tick) cannot move a loaded joint
+    brake_min_step: int = 30
+    # Stop policy (IEC 60204-1 stop category 2 / ISO 10218-1 safety-rated monitored stop): on a fault the
+    # arm FREEZES with torque kept - goal = present and Torque_Limit raised to hold_torque_limit so it
+    # stays rigid under gravity and a held object. Torque is dropped only by an explicit idle/guiding.
+    hold_torque_limit: int = 600
+    # EPROM Max_Torque_Limit written by cookbook/10_persist_caps: the hardware ceiling. RAM Torque_Limit
+    # (motion caps, lower) is set by apply_safety() on every torque-on; hold raises it up to the ceiling.
+    eprom_torque_ceiling: int = 600  # >= ~30: below that the P controller output (~8 permille/tick) cannot move a loaded joint
 
     # Optional per-joint overrides: motor_id -> (min_position, max_position)
     position_limits: dict[int, tuple[int, int]] = field(default_factory=dict)
@@ -134,21 +141,29 @@ def read_effort(bus: FeetechBus, motor_ids: list[int]) -> dict[int, float]:
 
 
 def verify_eprom(bus: FeetechBus, limits: SafetyLimits, motor_ids: list[int]) -> list[str]:
-    """모터 EPROM(Max_Torque_Limit, Min/Max_Position_Limit)이 캘리브레이션과 다르면 경고 목록을 돌려준다.
-
-    데몬/스크립트가 죽어도 서보 자체 캡이 마지막 방어선이므로, 시작할 때마다 확인한다
-    (Franka Desk가 안전 설정 변경을 추적하는 것에 대응). 기록은 cookbook/10_persist_caps.py.
-    """
+    """모터 EPROM이 캘리브레이션과 다르면 경고 목록. Max_Torque_Limit은 상한(eprom_torque_ceiling)과 비교한다."""
     problems: list[str] = []
     for motor_id in motor_ids:
         eprom_cap = bus.read("Max_Torque_Limit", motor_id)
-        want_cap = limits.torque_for(motor_id)
-        if eprom_cap > want_cap:
-            problems.append(f"ID{motor_id}: EPROM Max_Torque_Limit {eprom_cap}‰ > 캘리브레이션 캡 {want_cap}‰ (전원 켜면 캡 없음)")
+        if eprom_cap != limits.eprom_torque_ceiling:
+            problems.append(f"ID{motor_id}: EPROM Max_Torque_Limit {eprom_cap}‰ != ceiling {limits.eprom_torque_ceiling}‰ (run cookbook/10_persist_caps.py)")
         if motor_id in limits.position_limits:
             lo, hi = limits.position_limits[motor_id]
             got = (bus.read("Min_Position_Limit", motor_id), bus.read("Max_Position_Limit", motor_id))
             if got != (lo, hi):
                 problems.append(f"ID{motor_id}: EPROM 위치 한계 {got} != 캘리브레이션 ({lo}, {hi})")
     return problems
+
+
+def freeze(bus: FeetechBus, motor_ids: list[int], limits: SafetyLimits) -> dict[int, int]:
+    """Category-2 stop: hold the present position rigidly with torque ON.
+
+    goal = present (no further motion), Torque_Limit = hold cap, Torque_Enable = 1. Returns the held
+    positions. Uses sync_write (no reply needed) so it works even when the receive path is degraded.
+    """
+    present = bus.sync_read("Present_Position", motor_ids)
+    bus.sync_write("Goal_Position", present)
+    bus.sync_write("Torque_Limit", {i: limits.hold_torque_limit for i in motor_ids})
+    bus.sync_write("Torque_Enable", {i: 1 for i in motor_ids})
+    return present
 

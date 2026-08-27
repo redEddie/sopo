@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sopo import FeetechBus, apply_safety
 from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
-from sopo.control import Blackbox, run_control_loop
+from sopo.control import end_session, Blackbox, run_control_loop
 from sopo.reflex import Reflex, ReflexConfig
 from sopo.safety import verify_eprom
 from sopo.sources import WaypointSource
@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--torque-limit", type=int, default=None, help="전 관절 공통 캡 오버라이드 (기본: 설정/캘리브레이션 값)")
     parser.add_argument("--rate", type=float, default=None, help="루프 주파수 Hz (기본: 설정 rate_hz 또는 50)")
     parser.add_argument("--verbose", action="store_true")
+    parser.add_argument("--release", action="store_true", help="drop torque at exit (default: hold, Cat 2 stop)")
     args = parser.parse_args()
 
     cfg = load_arm_config(args.config)
@@ -63,8 +64,7 @@ def main() -> None:
     except RuntimeError as e:
         print(f"\nstopped: {e}", file=sys.stderr)
     finally:
-        print("torque off - support the arm, it may drop")
-        bus.disconnect(disable_torque_ids=ids)
+        end_session(bus, ids, limits, args.release)
         source.disconnect()
 
 

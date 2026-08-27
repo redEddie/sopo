@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sopo import FeetechBus, apply_safety
 from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
-from sopo.control import Blackbox, prompt_recover, run_control_loop
+from sopo.control import end_session, Blackbox, prompt_recover, run_control_loop
 from sopo.reflex import Reflex, ReflexConfig
 from sopo.safety import verify_eprom
 from sopo.sources import JogSource
@@ -30,6 +30,7 @@ def main() -> None:
     parser.add_argument("--config", default="configs/arm.yaml")
     parser.add_argument("--torque-limit", type=int, default=None, help="전 관절 공통 캡 오버라이드")
     parser.add_argument("--step", type=int, default=40, help="키 한 번당 틱")
+    parser.add_argument("--release", action="store_true", help="drop torque at exit (default: hold, Cat 2 stop)")
     args = parser.parse_args()
 
     cfg = load_arm_config(args.config)
@@ -71,8 +72,7 @@ def main() -> None:
         print(f"\nstopped: {e}", file=sys.stderr)
     finally:
         reader.restore()
-        print("torque off - support the arm, it may drop")
-        bus.disconnect(disable_torque_ids=ids)
+        end_session(bus, ids, limits, args.release)
 
 
 if __name__ == "__main__":

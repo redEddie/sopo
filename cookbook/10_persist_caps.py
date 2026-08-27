@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""calibration.yaml의 토크 캡·위치 한계를 모터 EPROM에 영구 기록한다.
+"""모터 EPROM에 토크 상한(Max_Torque_Limit = hold/ceiling, 기본 600‰)과 위치 한계를 영구 기록한다.
+
+운용 캡(관절별 200~400‰)은 apply_safety()가 매번 RAM Torque_Limit에 쓴다. EPROM은 그보다 높은 상한이라
+결함 시 홀드(freeze)가 팔을 빳빳하게 잡을 수 있고, 전원을 켠 직후에도 상한 안에서만 움직인다.
 
 Torque_Limit(RAM)은 전원을 켤 때 Max_Torque_Limit(EPROM)에서 복원되므로, 여기 기록해두면
 어떤 스크립트가 apply_safety()를 잊거나 데몬이 죽어도 서보 자체가 캡을 지킨다 — 마지막 방어선.
@@ -42,7 +45,7 @@ def main() -> None:
         print(f"{'ID':>3} | {'Max_Torque_Limit':>17} | {'Min/Max_Position_Limit':>24}")
         for i in ids:
             cap_now = bus.read("Max_Torque_Limit", i)
-            cap_want = limits.torque_for(i)
+            cap_want = limits.eprom_torque_ceiling  # 하드웨어 상한. 운용 캡(torque_for)은 apply_safety가 RAM에
             lim_now = (bus.read("Min_Position_Limit", i), bus.read("Max_Position_Limit", i))
             lim_want = limits.position_limits.get(i) if i not in continuous_ids else None  # 연속 관절은 펌웨어 한계 안 씀
             cap_s = f"{cap_now} -> {cap_want}" if cap_now != cap_want else f"{cap_now} (동일)"

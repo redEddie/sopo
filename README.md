@@ -137,6 +137,15 @@ REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가
 
 사람 옆에서 돌릴 때는 `torque_limit`을 400(40%) 이하로 유지할 것.
 
+### 정지 정책 — 결함 시 굳는다, 힘이 빠지지 않는다 (IEC 60204-1 Cat 2, [#10](https://github.com/redEddie/sopo/issues/10))
+
+자가진단 실패·리플렉스·통신 오류·데몬/스크립트 종료 등 **모든 소프트웨어 결함은 홀드**다: 목표=현재로 굳히고
+`Torque_Limit`을 홀드 캡(600‰)으로 올려 빳빳하게 유지한다 (ISO 10218-1 safety-rated monitored stop, Franka reflex와 동일).
+토크를 끄는 것(Cat 0)은 `idle`/`guiding` 명령, `cookbook/11_torque_off.py`, 스크립트의 `--release`뿐이다 —
+쥔 물건을 떨어뜨리거나 팔 아래의 사람·물체를 치는 "예상치 못한 낙하"를 없애기 위해서다.
+EPROM `Max_Torque_Limit`은 상한 600‰(`10_persist_caps`), 운용 캡(200~400‰)은 `apply_safety()`가 RAM에 쓴다.
+서보 홀드는 브레이크가 아니라 능동 토크라 발열이 있고 홀드 캡을 넘는 힘에는 밀린다; 물리 E-stop(#5)은 표준대로 전원 차단(Cat 0)이다.
+
 ### 토크 제한 단위
 
 `Torque_Limit`/`Max_Torque_Limit`은 **천분율(‰, 0~1000)** 이다. 150 = 15%. 모터에 토크 센서는 없고

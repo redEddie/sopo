@@ -19,7 +19,7 @@ from typing import Callable
 from .bus import FeetechBus
 from .joints import ContinuousJoint, DualMotorJoint, Joint
 from .reflex import Event, Mode, Reflex, Trip
-from .safety import SafetyLimits
+from .safety import SafetyLimits, freeze
 from .sources import ActionSource
 
 ARRIVAL_TICKS = 30
@@ -104,6 +104,20 @@ def describe_trip(trip: Trip, joints: list[Joint]) -> str:
     name_of = {mid: j.name for j in joints for mid in j.motor_ids}
     where = f"{name_of.get(trip.motor_id, '?')} (ID {trip.motor_id})" if trip.motor_id is not None else "all"
     return f"[REFLEX] {trip.event.name} {where}: {trip.detail}"
+
+
+def end_session(bus: FeetechBus, motor_ids: list[int], limits: SafetyLimits, release: bool = False) -> None:
+    """프로그램 종료 시 기본은 홀드(토크 유지, Cat 2). release=True일 때만 토크 해제."""
+    if release:
+        print("releasing torque - support the arm, it may drop")
+        bus.disconnect(disable_torque_ids=motor_ids)
+        return
+    try:
+        freeze(bus, motor_ids, limits)
+        print(f"arm HOLDS position (torque on, cap {limits.hold_torque_limit}‰). release with: python cookbook/11_torque_off.py")
+    except Exception as e:
+        print(f"freeze failed ({e}) - servos keep their last goal", file=sys.stderr)
+    bus.disconnect()
 
 
 def prompt_recover(bus: FeetechBus, joints: list[Joint], reflex: Reflex) -> str:

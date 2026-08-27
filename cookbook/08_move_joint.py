@@ -33,7 +33,7 @@ from sopo import (
 
 
 from sopo.config import load_arm_config as load_config
-from sopo.control import describe_trip  # arm:/구 leader·follower 스키마 모두 지원
+from sopo.control import describe_trip, end_session  # arm:/구 leader·follower 스키마 모두 지원
 
 
 def build_joint(cfg: dict, joint_name: str):
@@ -96,6 +96,7 @@ def main() -> None:
     parser.add_argument("--goal", type=int, required=True, help="목표 위치 (reference 모터 기준 틱)")
     parser.add_argument("--torque-limit", type=int, default=200, help="토크 제한 (0-1000)")
     parser.add_argument("--timeout", type=float, default=10.0, help="최대 대기 시간 (초)")
+    parser.add_argument("--release", action="store_true", help="drop torque at exit (default: hold)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -201,9 +202,7 @@ def main() -> None:
                 break
             time.sleep(0.05)
     finally:
-        bus.disable_torque(motor_ids)
-        bus.disconnect()
-        print("torque off")
+        end_session(bus, motor_ids, limits, args.release)
 
 
 if __name__ == "__main__":

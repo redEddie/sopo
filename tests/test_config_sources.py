@@ -96,9 +96,10 @@ def test_verify_eprom_reports_drift():
         regs = {(19, "Max_Torque_Limit"): 1000, (19, "Min_Position_Limit"): 0, (19, "Max_Position_Limit"): 4095,
                 (21, "Max_Torque_Limit"): 150}
         def read(self, reg, mid): return self.regs[(mid, reg)]
-    lim = SafetyLimits(position_limits={19: (50, 4045)}, torque_limits={19: 150, 21: 150})
+    lim = SafetyLimits(position_limits={19: (50, 4045)}, torque_limits={19: 150, 21: 150}, eprom_torque_ceiling=600)
     problems = verify_eprom(FakeBus(), lim, [19, 21])
-    assert len(problems) == 2 and "ID19" in problems[0] and "ID19" in problems[1]
+    # 19: ceiling 1000 != 600 and position limits; 21: ceiling 150 != 600
+    assert len(problems) == 3 and problems[0].startswith("ID19") and problems[2].startswith("ID21")
 
 
 def test_continuous_home_abs_picks_nearest_turn():

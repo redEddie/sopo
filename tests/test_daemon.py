@@ -41,7 +41,7 @@ class FakeBus:
     def read(self, reg, mid):
         if reg == "Present_Position": self._step(); return self.pos[mid]
         if reg == "Torque_Enable": return self.torque[mid]
-        if reg == "Max_Torque_Limit": return 200
+        if reg == "Max_Torque_Limit": return 600
         if reg in ("Min_Position_Limit", "Max_Position_Limit"): return {"Min_Position_Limit": 220, "Max_Position_Limit": 3969}[reg]
         return self.regs.get((mid, reg), 0)
     def write(self, reg, mid, value):
@@ -163,4 +163,30 @@ def test_lease_is_exclusive_and_revoked_on_reflex(running_daemon):
     assert c.state(1.0)["lease"] is None
     assert c.acquire("policy")["ok"] is False                     # must recover first
     assert c.command("idle")["ok"]
+
+
+def test_self_test_failure_freezes_instead_of_dropping_torque(running_daemon, monkeypatch):
+    d, c = running_daemon
+    def boom(*a, **k): raise RuntimeError("J2 did not reach")
+    monkeypatch.setattr(daemon_mod, "self_test", boom)
+    r = c.command("init")
+    assert r["ok"] is False and "holds" in r["error"]
+    assert d.mode.value == "reflex" and d.bus.torque[19] == 1                  # torque kept (Cat 2)
+    assert d.bus.regs[(19, "Torque_Limit")] == 600                             # hold cap
+    assert c.state(1.0)["lease"] is None
+    assert c.command("move")["ok"] is False                                    # must recover
+    assert c.command("recover")["ok"] and d.mode.value == "move"
+    assert d.bus.regs[(19, "Torque_Limit")] == 200                             # motion cap restored
+
+
+def test_daemon_exit_holds_torque(monkeypatch):
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6565, "cmd": 6566, "action": 6567}
+    d = daemon_mod.Daemon(CFG, ports)
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    assert c.command("move")["ok"]
+    c.command("shutdown"); t.join(timeout=3)
+    assert d.bus.torque[19] == 1 and d.bus.regs[(19, "Torque_Limit")] == 600  # holds, stiff
 

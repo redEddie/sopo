@@ -26,7 +26,7 @@ from .control import (ARRIVAL_TICKS, SOFT_START_STEP, Blackbox, clamp_joint_goal
                       hold_joint_goals, motor_goals, read_joints, reflex_present_view)
 from .joints import ContinuousJoint, DualMotorJoint
 from .reflex import Mode as ReflexMode, Reflex, ReflexConfig
-from .safety import apply_safety, verify_eprom
+from .safety import apply_safety, freeze, verify_eprom
 from .sources import StreamSource
 from .startup import self_test
 
@@ -42,8 +42,9 @@ class ArmMode(str, Enum):
 
 
 class Daemon:
-    def __init__(self, cfg: dict, ports: dict | None = None, watchdog_s: float = 0.5):
+    def __init__(self, cfg: dict, ports: dict | None = None, watchdog_s: float = 0.5, release_on_exit: bool = False):
         self.cfg = cfg
+        self.release_on_exit = release_on_exit
         self.ports = {**DEFAULT_PORTS, **(ports or {})}
         self.joints = make_joints(cfg)
         self.limits = make_limits(cfg)
@@ -103,8 +104,13 @@ class Daemon:
             self._loop()
         finally:
             self.running = False
-            self._log("shutting down: torque off")
-            self.bus.disconnect(disable_torque_ids=self.ids)
+            if self.release_on_exit or self.mode in (ArmMode.IDLE, ArmMode.GUIDING):
+                self._log("shutting down: torque off")
+                self.bus.disconnect(disable_torque_ids=self.ids)
+            else:
+                self._freeze("daemon exit")
+                self._log("shutting down: arm HOLDS (torque on). release: python cookbook/11_torque_off.py")
+                self.bus.disconnect()
 
     # ---------------------------------------------------------------- threads
     def _rep_thread(self) -> None:
@@ -185,17 +191,17 @@ class Daemon:
                     self._log(f"warn: {w}")
                 self.blackbox.record(t0, self.reflex.mode.value, self.rp, mg, self.load, ";".join(t.event.value for t in trips))
                 if self.reflex.mode is ReflexMode.STOPPED:
-                    self._set_torque(False); self.mode = ArmMode.STOPPED; self._revoke("stopped")
-                    self._log(f"STOPPED - torque off. blackbox: {self.blackbox.dump('stopped')}")
+                    self.mode = ArmMode.STOPPED; self._freeze("stopped")
+                    self._log(f"STOPPED (comm loss / overtemp) - arm holds. blackbox: {self.blackbox.dump('stopped')}. 'idle' to release")
                 elif self.reflex.mode is ReflexMode.REFLEX and self.mode is not ArmMode.REFLEX:
                     hold = self.reflex.hold_targets(self.rp)
                     try:
                         command_joints(self.bus, self.joints, hold_joint_goals(self.joints, hold))
                     except Exception as e:
                         self._log(f"hold send failed: {e}")
-                    self.mode = ArmMode.REFLEX; self._revoke("reflex")
+                    self.mode = ArmMode.REFLEX; self._stiffen(); self._revoke("reflex")
                     why = self.last_trips[-1].replace("[REFLEX] ", "") if self.last_trips else "?"
-                    self._log(f"REFLEX latched ({why}) - hold sent. blackbox: {self.blackbox.dump('reflex')}. send 'recover' to resume")
+                    self._log(f"REFLEX latched ({why}) - holding stiff. blackbox: {self.blackbox.dump('reflex')}. 'recover' to resume")
 
             elapsed = time.monotonic() - t0
             self.cycle_times.append(elapsed)
@@ -254,6 +260,21 @@ class Daemon:
         self.soft = True
         self.mode = ArmMode.MOVE
 
+    def _stiffen(self) -> None:
+        """Raise Torque_Limit to the hold cap so the frozen arm stays rigid (Cat 2 stop)."""
+        try:
+            self.bus.sync_write("Torque_Limit", {i: self.limits.hold_torque_limit for i in self.ids})
+        except Exception as e:
+            self._log(f"stiffen failed: {e}")
+
+    def _freeze(self, reason: str) -> None:
+        """Category-2 stop: goal = present, hold cap, torque kept. Lease revoked."""
+        try:
+            freeze(self.bus, self.ids, self.limits)
+        except Exception as e:
+            self._log(f"freeze failed ({e}) - servos keep their last goal")
+        self._revoke(reason)
+
     def _revoke(self, reason: str) -> None:
         if self.lease:
             self._log(f"control lease of '{self.lease['name']}' revoked ({reason})")
@@ -297,9 +318,13 @@ class Daemon:
         if cmd == "recover":
             if self.mode is not ArmMode.REFLEX:
                 return {"ok": False, "error": f"not in REFLEX (mode {self.mode.value})"}
-            ok, reason = self.reflex.recover(self.rp, self.load)
-            if not ok:
-                return {"ok": False, "error": reason}
+            if self.reflex.mode is ReflexMode.REFLEX:
+                ok, reason = self.reflex.recover(self.rp, self.load)
+                if not ok:
+                    return {"ok": False, "error": reason}
+            else:
+                self.reflex = self._new_reflex()
+            apply_safety(self.bus, self.ids, self.limits)  # back to motion caps
             self.stream.clear(); self.soft = True; self.mode = ArmMode.MOVE
             return {"ok": True, "mode": "move"}
         if cmd == "goto":
@@ -330,8 +355,10 @@ class Daemon:
             try:
                 report = self_test(self.bus, self.joints, self.limits, self.joint_limits)
             except RuntimeError as e:
-                self._set_torque(False); self.mode = ArmMode.IDLE
-                return {"ok": False, "error": f"self-test failed: {e}"}
+                self.last_trips = (self.last_trips + [f"[REFLEX] SELF_TEST: {e}"])[-5:]
+                self.mode = ArmMode.REFLEX; self._freeze("self-test failed")
+                self._log(f"self-test failed - arm holds stiff. 'recover' then retry, or 'idle' to release: {e}")
+                return {"ok": False, "error": f"self-test failed: {e} (arm holds; 'recover' or 'idle')"}
             standby = {str(k): int(v) for k, v in (self.cfg.get("standby_pose") or {}).items()}
             for j in self.joints:
                 if isinstance(j, ContinuousJoint) and j.home_abs is not None and j.name in standby:
@@ -377,9 +404,10 @@ def main() -> None:
     parser.add_argument("--cmd-port", type=int, default=DEFAULT_PORTS["cmd"])
     parser.add_argument("--action-port", type=int, default=DEFAULT_PORTS["action"])
     parser.add_argument("--watchdog", type=float, default=0.5, help="seconds without actions before holding")
+    parser.add_argument("--release-on-exit", action="store_true", help="drop torque when the daemon exits (default: hold, Cat 2)")
     args = parser.parse_args()
     cfg = load_arm_config(args.config)
-    d = Daemon(cfg, {"state": args.state_port, "cmd": args.cmd_port, "action": args.action_port}, args.watchdog)
+    d = Daemon(cfg, {"state": args.state_port, "cmd": args.cmd_port, "action": args.action_port}, args.watchdog, args.release_on_exit)
     try:
         d.start()
     except KeyboardInterrupt:
