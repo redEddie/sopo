@@ -21,6 +21,7 @@ class SopoClient:
         self.req.connect(f"tcp://{host}:{p['cmd']}")
         self.pub = ctx.socket(zmq.PUB)
         self.pub.connect(f"tcp://{host}:{p['action']}")
+        self.lease: str | None = None
         time.sleep(0.1)  # PUB/SUB 연결 대기
 
     def state(self, timeout_s: float = 1.0) -> dict | None:
@@ -33,6 +34,17 @@ class SopoClient:
         self.req.send_json({"cmd": cmd, **kw})
         return self.req.recv_json()
 
+    def acquire(self, name: str = "client") -> dict:
+        """배타적 제어권(리스). reflex/stopped/idle 때 회수되므로 그 뒤엔 recover → acquire를 다시 해야 한다."""
+        r = self.command("acquire", name=name)
+        self.lease = r.get("lease") if r.get("ok") else None
+        return r
+
+    def release(self) -> dict:
+        r = self.command("release", lease=self.lease)
+        self.lease = None
+        return r
+
     def send_action(self, action: dict[str, int]) -> None:
-        """관절 목표 {name: tick}. 데몬 워치독(기본 0.5s) 안에 계속 보내야 움직인다."""
-        self.pub.send_json({"action": {k: int(v) for k, v in action.items()}}, flags=zmq.NOBLOCK)
+        """관절 목표 {name: tick}. acquire()한 리스가 있어야 데몬이 받는다. 워치독(0.5s) 안에 계속 보낼 것."""
+        self.pub.send_json({"action": {k: int(v) for k, v in action.items()}, "lease": self.lease}, flags=zmq.NOBLOCK)

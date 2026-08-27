@@ -106,8 +106,23 @@ python -m sopo.cli idle                    # 토크 OFF
 python examples/jog_client.py
 ```
 
-파이썬에서: `from sopo.client import SopoClient; c = SopoClient(); c.command("move"); c.send_action({"J4": 2300})`.
+파이썬(정책)에서 — Franka의 `control()` 세션에 해당하는 **제어 리스**를 잡아야 액션이 받아들여진다:
+
+```python
+from sopo.client import SopoClient
+c = SopoClient()
+c.command("move")            # 토크 ON (FCI 활성화에 해당)
+c.acquire("policy")          # 배타적 제어권. 다른 클라이언트가 잡고 있으면 거부
+while True:
+    s = c.state()            # 최신 상태 (50Hz)
+    if s["mode"] == "reflex":          # 리플렉스: 리스가 회수되어 액션이 버려진다
+        c.command("recover")           # 명시적 복구 (Franka automaticErrorRecovery)
+        c.acquire("policy")            # 새 세션
+    c.send_action({"J4": 2300})        # 0.5초 안에 계속 보내야 함 (워치독)
+```
+
 모드: `idle`(토크 OFF) · `guiding`(토크 OFF, 가르치기) · `move` · `reflex`(래칭) · `stopped`. 토크는 명령으로만 켜지고, 켜기 전 항상 `apply_safety()`.
+REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가는 길이다. `idle`/`guiding`(토크 OFF)은 항상 허용.
 
 ## 안전 설계
 

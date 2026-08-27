@@ -104,6 +104,11 @@ def test_daemon_modes_actions_and_watchdog(running_daemon):
     assert c.command("goto", action={"J4": 2300})["ok"] is False
     assert c.command("move")["ok"] and d.mode.value == "move" and d.bus.torque[19] == 1
     assert d.bus.regs[(19, "Torque_Limit")] == 200 and d.bus.regs[(19, "Return_Delay_Time")] == 0
+    # actions without a lease are dropped
+    for _ in range(15):
+        c.send_action({"J4": 5000}); time.sleep(0.02)
+    assert abs(c.state(1.0)["joints"]["J4"]["pos"] - 2000) < 40
+    assert c.acquire("test")["ok"] and c.state(1.0)["lease"] == "test"
     # action stream drives the joint; clamp to soft limits
     for _ in range(40):
         c.send_action({"J4": 5000}); time.sleep(0.02)
@@ -115,7 +120,9 @@ def test_daemon_modes_actions_and_watchdog(running_daemon):
     assert s["stale"] and abs(s["joints"]["J4"]["goal"] - s["joints"]["J4"]["pos"]) <= 30
     # dual joint mirror commanded as K - goal
     assert abs(d.bus.goal[10] + d.bus.goal[11] - 4005) <= 1
-    # goto sticky
+    # goto is refused while someone holds the lease; after release it works (sticky)
+    assert c.command("goto", action={"J4": 2500})["ok"] is False
+    assert c.release()["ok"]
     assert c.command("goto", action={"J4": 2500})["ok"]
     time.sleep(0.8)
     assert abs(c.state(1.0)["joints"]["J4"]["pos"] - 2500) <= 30
@@ -143,4 +150,17 @@ def test_reflex_latch_requires_explicit_recover(running_daemon):
         assert r["ok"] is False and "recover" in r["error"]
     assert c.command("goto", action={"J4": 2300})["ok"] is False
     assert c.command("idle")["ok"] and d.mode.value == "idle"   # dropping torque always allowed
+
+
+def test_lease_is_exclusive_and_revoked_on_reflex(running_daemon):
+    d, c = running_daemon
+    from sopo.client import SopoClient
+    c2 = SopoClient("127.0.0.1", {"state": 6555, "cmd": 6556, "action": 6557})
+    assert c.command("move")["ok"] and c.acquire("policy")["ok"]
+    assert c2.acquire("jog")["ok"] is False                       # exclusive
+    d.mode = daemon_mod.ArmMode.REFLEX; d._revoke("reflex")        # simulate a latched trip
+    time.sleep(0.3)
+    assert c.state(1.0)["lease"] is None
+    assert c.acquire("policy")["ok"] is False                     # must recover first
+    assert c.command("idle")["ok"]
 

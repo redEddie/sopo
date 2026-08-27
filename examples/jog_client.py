@@ -39,19 +39,24 @@ def main() -> None:
                 pending[:] = [k for k in keys if k not in ("m", "g", "r")]
                 for k in extra:
                     reader.restore()
-                    print("\n", c.command({"m": "move", "g": "guiding", "r": "recover"}[k]))
+                    r = c.command({"m": "move", "g": "guiding", "r": "recover"}[k])
+                    print("\n", r)
+                    if k in ("m", "r") and r.get("ok"):
+                        print(" ", c.acquire("jog"))   # Franka control(): 리스는 reflex 때 회수되므로 복구 후 다시 받는다
                     reader.reenter()
                     src.targets = None  # 모드 전환 후 목표를 현재로 리셋
                 action = src.get_action(present, time.monotonic())
                 if s["mode"] == "move":
                     c.send_action(action)
-                print(f"\r[{s['mode']:>7}/{s['reflex']:<8}] {src.last_status}  {s['volt'][0]:.1f}V p99 {s['jitter_p99_ms']}ms".ljust(150), end="", flush=True)
+                print(f"\r[{s['mode']:>7}/{s['reflex']:<8} lease={s.get('lease') or '-'}] {src.last_status}  {s['volt'][0]:.1f}V p99 {s['jitter_p99_ms']}ms".ljust(150), end="", flush=True)
                 if src.is_done():
                     break
                 time.sleep(0.03)
         except KeyboardInterrupt:
             pass
-    print("\njog client exit (daemon keeps its mode; use `python -m sopo.cli idle` to drop torque)")
+    if c.lease:
+        c.release()
+    print("\njog client exit (lease released; daemon keeps its mode - `python -m sopo.cli idle` drops torque)")
 
 
 if __name__ == "__main__":

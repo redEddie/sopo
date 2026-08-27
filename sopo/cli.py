@@ -11,7 +11,8 @@ from .client import SopoClient
 
 def fmt_state(s: dict) -> str:
     js = "  ".join(f"{n}:{v['pos']}->{v['goal']}({v['load']})" for n, v in s["joints"].items())
-    line = (f"{s['mode']:>7} reflex={s['reflex']:<8} {'STALE ' if s['stale'] else ''}{js}  | {s['volt'][0]:.1f}-{s['volt'][1]:.1f}V "
+    lease = f"lease={s.get('lease') or '-':<8} "
+    line = (f"{s['mode']:>7} reflex={s['reflex']:<8} {lease}{'STALE ' if s['stale'] else ''}{js}  | {s['volt'][0]:.1f}-{s['volt'][1]:.1f}V "
             f"cycle {s['cycle_ms']}ms p99 {s['jitter_p99_ms']}ms")
     if s.get("trips") and s["mode"] == "reflex":
         line += "\n         last: " + s["trips"][-1]

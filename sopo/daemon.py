@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import queue
+import secrets
 import statistics
 import sys
 import threading
@@ -65,6 +66,10 @@ class Daemon:
         self.present: dict[str, int] = {}
         self.load: dict[int, int] = {}
         self.rp: dict[int, int] = {}
+        # Control lease: exclusive right to stream actions (Franka's control() session). Revoked on
+        # REFLEX/STOPPED/idle so a client cannot keep driving without acknowledging the event.
+        self.lease: dict | None = None
+        self._lease_warned = 0.0
 
     # ------------------------------------------------------------------ setup
     def _new_reflex(self) -> Reflex:
@@ -180,7 +185,7 @@ class Daemon:
                     self._log(f"warn: {w}")
                 self.blackbox.record(t0, self.reflex.mode.value, self.rp, mg, self.load, ";".join(t.event.value for t in trips))
                 if self.reflex.mode is ReflexMode.STOPPED:
-                    self._set_torque(False); self.mode = ArmMode.STOPPED
+                    self._set_torque(False); self.mode = ArmMode.STOPPED; self._revoke("stopped")
                     self._log(f"STOPPED - torque off. blackbox: {self.blackbox.dump('stopped')}")
                 elif self.reflex.mode is ReflexMode.REFLEX and self.mode is not ArmMode.REFLEX:
                     hold = self.reflex.hold_targets(self.rp)
@@ -188,7 +193,7 @@ class Daemon:
                         command_joints(self.bus, self.joints, hold_joint_goals(self.joints, hold))
                     except Exception as e:
                         self._log(f"hold send failed: {e}")
-                    self.mode = ArmMode.REFLEX
+                    self.mode = ArmMode.REFLEX; self._revoke("reflex")
                     why = self.last_trips[-1].replace("[REFLEX] ", "") if self.last_trips else "?"
                     self._log(f"REFLEX latched ({why}) - hold sent. blackbox: {self.blackbox.dump('reflex')}. send 'recover' to resume")
 
@@ -207,10 +212,17 @@ class Daemon:
                 break
             except Exception:
                 break
-        if last is not None:
-            action = last.get("action", last) if isinstance(last, dict) else None
-            if isinstance(action, dict):
-                self.stream.push(action, now)
+        if last is not None and isinstance(last, dict):
+            action = last.get("action")
+            token = last.get("lease")
+            if not isinstance(action, dict):
+                return
+            if self.lease is None or token != self.lease["token"]:
+                if now - self._lease_warned > 5.0:
+                    self._lease_warned = now
+                    self._log("action dropped: no valid control lease (client must 'acquire' - after a reflex: 'recover' then 'acquire')")
+                return
+            self.stream.push(action, now)
 
     def _drain_commands(self) -> None:
         while True:
@@ -242,10 +254,32 @@ class Daemon:
         self.soft = True
         self.mode = ArmMode.MOVE
 
+    def _revoke(self, reason: str) -> None:
+        if self.lease:
+            self._log(f"control lease of '{self.lease['name']}' revoked ({reason})")
+            self.lease = None
+            self.stream.clear()
+
     def _handle(self, msg: dict) -> dict:
         cmd = msg.get("cmd")
         if cmd == "status":
             return {"ok": True, "state": self._state(0.0, 0.0)}
+        if cmd == "acquire":
+            name = str(msg.get("name") or "client")
+            if self.mode in (ArmMode.REFLEX, ArmMode.STOPPED):
+                return {"ok": False, "error": f"cannot acquire in {self.mode.value}: recover first"}
+            if self.lease and self.lease["name"] != name:
+                return {"ok": False, "error": f"lease held by '{self.lease['name']}'"}
+            self.lease = {"name": name, "token": secrets.token_hex(8), "since": time.time()}
+            self.stream.clear()
+            self._log(f"control lease -> '{name}'")
+            return {"ok": True, "lease": self.lease["token"], "mode": self.mode.value}
+        if cmd == "release":
+            if self.lease and msg.get("lease") == self.lease["token"]:
+                self._revoke("released"); return {"ok": True}
+            return {"ok": False, "error": "not the lease holder"}
+        if cmd in ("goto", "init") and self.lease is not None:
+            return {"ok": False, "error": f"control lease held by '{self.lease['name']}' - release it first"}
         # Latched errors must be acknowledged: only 'recover' leads back to MOVE (Franka: automaticErrorRecovery).
         # Dropping torque (idle/guiding) is always allowed.
         if self.mode is ArmMode.REFLEX and cmd in ("move", "torque_on", "init", "goto"):
@@ -258,7 +292,7 @@ class Daemon:
         if cmd in ("idle", "torque_off", "guiding"):
             self._set_torque(False)
             self.mode = ArmMode.GUIDING if cmd == "guiding" else ArmMode.IDLE
-            self.stream.clear()
+            self._revoke(cmd); self.stream.clear()
             return {"ok": True, "mode": self.mode.value}
         if cmd == "recover":
             if self.mode is not ArmMode.REFLEX:
@@ -321,6 +355,7 @@ class Daemon:
             joints[j.name] = {"pos": self.present.get(j.name), "goal": self.goal.get(j.name), "load": self.load.get(ref)}
         return {
             "t": time.time(), "mode": self.mode.value, "reflex": self.reflex.mode.value, "stale": self.stream.stale,
+            "lease": self.lease["name"] if self.lease else None,
             "joints": joints, "motors": {str(i): {"pos": self.rp.get(i), "load": self.load.get(i), "temp": self.temps.get(i)} for i in self.ids},
             "volt": list(self.volt), "cycle_ms": round(elapsed * 1e3, 2), "jitter_p99_ms": round(p99, 2), "trips": self.last_trips,
         }
