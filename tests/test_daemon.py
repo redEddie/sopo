@@ -53,6 +53,7 @@ class FakeBus:
         if reg == "Present_Load": return {i: (20 if self.torque[i] else 0) for i in ids}
         if reg == "Present_Temperature": return {i: 35 for i in ids}
         if reg == "Present_Voltage": return {i: 122 for i in ids}
+        if reg == "Torque_Enable": return {i: self.torque[i] for i in ids}
         return {i: 0 for i in ids}
     def sync_write(self, reg, values):
         for i, v in values.items(): self.write(reg, i, v)
