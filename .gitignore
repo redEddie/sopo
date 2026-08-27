@@ -6,3 +6,5 @@ dist/
 .venv/
 venv/
 
+# 블랙박스 로그
+logs/

@@ -13,7 +13,7 @@
 | J7(그리퍼) | - | - | 미장착 |
 
 - 버스: /dev/ttyACM0 (CDC-ACM), 1M baud. 실측 왕복: 7모터 전체 읽기 1.74ms(575Hz), 단일 0.27ms — USB 레이턴시 이슈 없음
-- 전 모터 Torque_Limit 공장값 1000(100%) — persist_torque_limit로 캡 영구화 필요
+- 전 모터 Max_Torque_Limit 공장값 1000(100%) — `cookbook/10_persist_caps.py`로 영구화 (스크립트 완료, 기록은 사용자 실행)
 - **EPROM 정규화 (2026-08-25 16시경, hopejr 잔재 제거)** — 롤백용 원래 값:
   - ID1 Phase 0b00111100 → 0b00101100 (bit4 멀티턴 피드백 해제, 위치가 4095를 넘던 원인)
   - ID10/11 Min/Max_Position_Limit 1030/3065 → 0/4095, ID15 960/2970 → 0/4095, ID16 1100/3200 → 0/4095
@@ -31,6 +31,8 @@
 - [ ] 관절별 소프트 리밋 실측 (`05_find_limits.py`) — 완료: J4. 남음: J1, J2, J3, J5, J6
 - [ ] 자중 토크 실측 (`06_gravity_load.py`) — J1/J5/J6은 J6 장착 후 측정, **J2/J3/J4는 J5·J6 장착 전 값이라 재측정 필요**
 - [ ] 다관절 웨이포인트 주행 하드웨어 검증 (`examples/run_waypoints.py`) — 리더 암 없음, 소스는 ActionSource로 교체 가능
+- [ ] 키보드 조그 하드웨어 검증 (`examples/jog.py`)
+- [ ] 리플렉스 하드웨어 튜닝 (`docs/reflex-spec.md` 8절) — 블랙박스 CSV(`logs/`)로 근거 남기기
 
 ## 2. Robot API/SDK (Franka의 libfranka 포지션)
 

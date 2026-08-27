@@ -17,8 +17,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sopo import FeetechBus, apply_safety
 from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
-from sopo.control import run_control_loop
+from sopo.control import Blackbox, run_control_loop
 from sopo.reflex import Reflex, ReflexConfig
+from sopo.safety import verify_eprom
 from sopo.sources import WaypointSource
 
 
@@ -43,6 +44,8 @@ def main() -> None:
 
     bus = FeetechBus(cfg["arm"]["port"], cfg["arm"].get("baudrate", 1_000_000))
     bus.connect()
+    for w in verify_eprom(bus, limits, ids):
+        print(f"경고(EPROM 드리프트): {w} — cookbook/10_persist_caps.py 실행 권장", file=sys.stderr)
     source.connect()
     try:
         apply_safety(bus, ids, limits)                      # 토크를 켜기 전 반드시
@@ -52,7 +55,8 @@ def main() -> None:
             print("주의: 연속 관절(J1)은 전선이 풀린 자세에서 시작해야 합니다 — 지금 자세가 허용 범위의 중심이 됩니다.")
         bus.enable_torque(ids)
         run_control_loop(bus, joints, limits, joint_limits, reflex, source,
-                         rate_hz=args.rate or cfg.get("rate_hz", 50), verbose=args.verbose)
+                         rate_hz=args.rate or cfg.get("rate_hz", 50), verbose=args.verbose,
+                         blackbox=Blackbox(ids, rate_hz=args.rate or cfg.get("rate_hz", 50)))
         print("웨이포인트 완료.")
     except KeyboardInterrupt:
         print("\n종료 요청.")

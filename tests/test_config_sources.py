@@ -72,3 +72,31 @@ def test_brake_zone_slows_down_near_limits():
     # 리밋에서 멀어지는 방향은 감속 없음
     assert clamp_joint_goals({"J4": 2000}, {"J4": 4040}, lim, 80, joints, 200, 10)["J4"] == 3960
 
+
+def test_jog_source_keys_and_lead_limit():
+    from sopo.sources import JogSource
+    keys = []
+    src = JogSource(["J4", "J6"], lambda: keys.pop(0) if keys else [], step=40, lead=200)
+    present = {"J4": 2000, "J6": 2000}
+    assert src.get_action(present, 0.0) == present               # 첫 호출: 목표=현재
+    keys.append(["right", "right", "down", "left"])
+    a = src.get_action(present, 0.1)
+    assert a == {"J4": 2080, "J6": 1960} and src.active_joint == "J6"
+    keys.append(["right"] * 20)                                    # 키 연타해도 목표는 현재 ±lead
+    assert src.get_action(present, 0.2)["J6"] == 2200
+    keys.append([" "])                                            # 홀드
+    assert src.get_action(present, 0.3) == present
+    keys.append(["q"]); src.get_action(present, 0.4)
+    assert src.is_done()
+
+
+def test_verify_eprom_reports_drift():
+    from sopo.safety import SafetyLimits, verify_eprom
+    class FakeBus:
+        regs = {(19, "Max_Torque_Limit"): 1000, (19, "Min_Position_Limit"): 0, (19, "Max_Position_Limit"): 4095,
+                (21, "Max_Torque_Limit"): 150}
+        def read(self, reg, mid): return self.regs[(mid, reg)]
+    lim = SafetyLimits(position_limits={19: (50, 4045)}, torque_limits={19: 150, 21: 150})
+    problems = verify_eprom(FakeBus(), lim, [19, 21])
+    assert len(problems) == 2 and "ID19" in problems[0] and "ID19" in problems[1]
+

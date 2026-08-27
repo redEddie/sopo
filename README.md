@@ -38,6 +38,8 @@ cookbook/        Feetech 기초 조작 쿡북 — README.md 참조
                    (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정 → 위치 한계 실측 → 자중 토크 실측)
 examples/
   run_waypoints.py 다관절 웨이포인트 주행 (안전 루프의 첫 클라이언트)
+  jog.py           키보드 조그 — 리더 암 없이 관절 실시간 이동, 자세 찾기
+logs/            블랙박스 CSV (리플렉스/정지 시 직전 60초 자동 저장, gitignore)
 configs/
   arm.yaml         이 암의 정의 (포트/관절/K/range_ticks/안전 기본값) — 커밋됨
   waypoints.example.yaml 웨이포인트 예시
@@ -68,6 +70,13 @@ python cookbook/08_move_joint.py --config configs/arm.yaml --joint J4 --goal 230
 
 # 7. 다관절 웨이포인트 주행 (리플렉스 포함)
 python examples/run_waypoints.py --config configs/arm.yaml --waypoints configs/waypoints.example.yaml --verbose
+
+# 8. 키보드 조그 (←/→ 이동, ↑/↓ 관절, space 홀드, q 종료)
+python examples/jog.py --config configs/arm.yaml
+
+# 9. 캡·리밋을 모터 EPROM에 영구화 (전원 켜는 순간부터 캡 적용)
+python cookbook/10_persist_caps.py --config configs/arm.yaml --dry-run
+python cookbook/10_persist_caps.py --config configs/arm.yaml
 ```
 
 ## 안전 설계

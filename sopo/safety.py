@@ -131,3 +131,24 @@ def read_effort(bus: FeetechBus, motor_ids: list[int]) -> dict[int, float]:
     """Present_Load as a signed fraction of stall torque (-1.0 to 1.0)."""
     loads = bus.sync_read("Present_Load", motor_ids)
     return {motor_id: load / 1000 for motor_id, load in loads.items()}
+
+
+def verify_eprom(bus: FeetechBus, limits: SafetyLimits, motor_ids: list[int]) -> list[str]:
+    """모터 EPROM(Max_Torque_Limit, Min/Max_Position_Limit)이 캘리브레이션과 다르면 경고 목록을 돌려준다.
+
+    데몬/스크립트가 죽어도 서보 자체 캡이 마지막 방어선이므로, 시작할 때마다 확인한다
+    (Franka Desk가 안전 설정 변경을 추적하는 것에 대응). 기록은 cookbook/10_persist_caps.py.
+    """
+    problems: list[str] = []
+    for motor_id in motor_ids:
+        eprom_cap = bus.read("Max_Torque_Limit", motor_id)
+        want_cap = limits.torque_for(motor_id)
+        if eprom_cap > want_cap:
+            problems.append(f"ID{motor_id}: EPROM Max_Torque_Limit {eprom_cap}‰ > 캘리브레이션 캡 {want_cap}‰ (전원 켜면 캡 없음)")
+        if motor_id in limits.position_limits:
+            lo, hi = limits.position_limits[motor_id]
+            got = (bus.read("Min_Position_Limit", motor_id), bus.read("Max_Position_Limit", motor_id))
+            if got != (lo, hi):
+                problems.append(f"ID{motor_id}: EPROM 위치 한계 {got} != 캘리브레이션 ({lo}, {hi})")
+    return problems
+

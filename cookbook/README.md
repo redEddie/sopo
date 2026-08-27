@@ -205,6 +205,15 @@ python cookbook/09_continuous_angle.py --port /dev/ttyACM0 --id 1
 
 전선이 풀린 자세에서 실행하면 그 자세를 0°로 잡고, 손으로 돌리는 동안 랩(4095→0)을 자동 처리한 연속 각도를 표시한다. 전선이 당기기 시작하는 각도를 양쪽에서 읽어 `joints` 설정의 `range_ticks`로 넣는다.
 
+### 10_persist_caps.py — 캡·리밋 EPROM 영구화
+
+```bash
+python cookbook/10_persist_caps.py --config configs/arm.yaml --dry-run   # 현재 EPROM vs 캘리브레이션 비교
+python cookbook/10_persist_caps.py --config configs/arm.yaml             # 'yes' 후 기록
+```
+
+`calibration.yaml`의 `torque_limits`를 `Max_Torque_Limit`(EPROM)에, `position_limits`를 `Min/Max_Position_Limit`(EPROM)에 기록한다. `Torque_Limit`(RAM)은 전원을 켤 때 `Max_Torque_Limit`에서 복원되므로, 이후로는 어떤 스크립트가 `apply_safety()`를 잊어도 서보가 스스로 캡을 지킨다. 연속 관절(J1)의 펌웨어 위치 한계는 건드리지 않는다. 실행 스크립트(`jog.py`, `run_waypoints.py`)는 시작할 때 EPROM이 캘리브레이션과 다르면 경고한다(드리프트 검사).
+
 ---
 
 ## 5. 트러블슈팅

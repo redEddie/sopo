@@ -8,8 +8,12 @@
 
 from __future__ import annotations
 
+import csv
 import sys
 import time
+from collections import deque
+from datetime import datetime
+from pathlib import Path
 from typing import Callable
 
 from .bus import FeetechBus
@@ -117,6 +121,33 @@ def prompt_recover(bus: FeetechBus, joints: list[Joint], reflex: Reflex) -> str:
     return "continue"
 
 
+class Blackbox:
+    """최근 N초의 사이클 기록(링버퍼). 리플렉스/정지/종료 시 CSV로 덤프 — Franka last_motion_errors에 대응."""
+
+    def __init__(self, ids: list[int], seconds: float = 60.0, rate_hz: float = 50.0, out_dir: str | Path = "logs"):
+        self.ids = ids
+        self.rows: deque = deque(maxlen=int(seconds * rate_hz))
+        self.out_dir = Path(out_dir)
+
+    def record(self, t: float, mode: str, present: dict[int, int], goal: dict[int, int], load: dict[int, int], note: str = "") -> None:
+        row = [f"{t:.3f}", mode]
+        for i in self.ids:
+            row += [present.get(i, ""), goal.get(i, ""), load.get(i, "")]
+        row.append(note)
+        self.rows.append(row)
+
+    def dump(self, reason: str) -> Path | None:
+        if not self.rows:
+            return None
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        path = self.out_dir / f"blackbox_{datetime.now():%Y%m%d_%H%M%S}_{reason}.csv"
+        with path.open("w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["t", "mode"] + [f"{k}{i}" for i in self.ids for k in ("pos", "goal", "load")] + ["note"])
+            w.writerows(self.rows)
+        return path
+
+
 def run_control_loop(
     bus: FeetechBus,
     joints: list[Joint],
@@ -128,6 +159,7 @@ def run_control_loop(
     on_reflex: Callable[[FeetechBus, list[Joint], Reflex], str] = prompt_recover,
     status_every: float = 0.5,
     verbose: bool = False,
+    blackbox: Blackbox | None = None,
 ) -> None:
     """source가 끝나거나(is_done) 사용자가 종료할 때까지 돈다. 토크는 켜진 채로 돌려받는다."""
     ids = [mid for j in joints for mid in j.motor_ids]
@@ -168,20 +200,28 @@ def run_control_loop(
             last_temp = t0
             temps = bus.sync_read("Present_Temperature", ids)
 
+        trips = []
         if goal:
-            trips = reflex.update(t0, rp, motor_goals(joints, goal), load, temps=temps, comm_ok=comm_ok)
+            mg = motor_goals(joints, goal)
+            trips = reflex.update(t0, rp, mg, load, temps=temps, comm_ok=comm_ok)
             for trip in trips:
                 print(f"[!] {trip.event.value}: {trip.detail}", file=sys.stderr)
             for w in reflex.warnings():
                 print(f"경고: {w}", file=sys.stderr)
+            if blackbox:
+                blackbox.record(t0, reflex.mode.value, rp, mg, load, ";".join(t.event.value for t in trips))
 
         if reflex.mode is Mode.STOPPED:
+            if blackbox:
+                print(f"블랙박스 저장: {blackbox.dump('stopped')}", file=sys.stderr)
             raise RuntimeError("STOPPED: 통신 두절/과열로 안전을 위해 중단합니다.")
 
         if reflex.mode is Mode.REFLEX:
             hold = reflex.hold_targets(rp)
             command_joints(bus, joints, hold_joint_goals(joints, hold))  # 논리각·듀얼 변환은 command()가
             print("홀드 목표 전송.", file=sys.stderr)
+            if blackbox and trips:
+                print(f"블랙박스 저장: {blackbox.dump('reflex')}", file=sys.stderr)
             if on_reflex(bus, joints, reflex) == "quit":
                 raise RuntimeError("사용자가 리플렉스 상태에서 종료했습니다.")
             soft = True
@@ -191,7 +231,7 @@ def run_control_loop(
         jitter_max = max(jitter_max, elapsed - period) if elapsed > period else jitter_max
         if verbose and t0 - last_status >= status_every:
             last_status = t0
-            print(f"[{source.name}] " + "  ".join(f"{n}:{present[n]}->{goal[n]}" for n in goal)
-                  + f"  | cycle {elapsed * 1e3:.1f}ms, max over {jitter_max * 1e3:.1f}ms")
+            line = getattr(source, "last_status", "") or "  ".join(f"{n}:{present[n]}->{goal[n]}" for n in goal)
+            print(f"[{source.name}] {line}  | cycle {elapsed * 1e3:.1f}ms, max over {jitter_max * 1e3:.1f}ms")
         if elapsed < period:
             time.sleep(period - elapsed)

@@ -89,6 +89,80 @@ class WaypointSource:
         pass
 
 
+class JogSource:
+    """키보드 조그: 선택한 관절의 목표를 키 입력마다 step틱씩 옮긴다. 리더 암 없이 자세를 찾는 용도.
+
+    터미널 I/O는 주입한다(`poll_keys()` → 키 이름 리스트). 키 이름:
+      left/right: 선택 관절 -/+ step   up/down: 관절 선택 이동   '1'..'9': 관절 직접 선택
+      '+'/'-': step 증감   ' ': 홀드(목표=현재)   'q': 종료
+    목표는 현재 위치 ±lead 안으로 묶어, 키를 떼면 곧 멈춘다(막힌 채 키를 눌러도 목표가 도망가지 않음).
+    """
+
+    name = "jog"
+
+    def __init__(self, joint_names: list[str], poll_keys, step: int = 40, lead: int = 200):
+        self.joint_names = list(joint_names)
+        self.poll_keys = poll_keys
+        self.step = step
+        self.lead = lead
+        self.active = 0
+        self.targets: dict[str, int] | None = None
+        self._present: dict[str, int] = {}
+        self._quit = False
+        self.last_status = ""
+
+    @property
+    def active_joint(self) -> str:
+        return self.joint_names[self.active]
+
+    def connect(self) -> None:
+        pass
+
+    def handle_key(self, key: str) -> None:
+        if self.targets is None:
+            return
+        n = len(self.joint_names)
+        if key == "left":
+            self.targets[self.active_joint] -= self.step
+        elif key == "right":
+            self.targets[self.active_joint] += self.step
+        elif key == "up":
+            self.active = (self.active - 1) % n
+        elif key == "down":
+            self.active = (self.active + 1) % n
+        elif key.isdigit() and 1 <= int(key) <= n:
+            self.active = int(key) - 1
+        elif key in ("+", "="):
+            self.step = min(200, self.step + 10)
+        elif key == "-":
+            self.step = max(5, self.step - 10)
+        elif key == " ":
+            self.targets = dict(self._present)
+        elif key == "q":
+            self._quit = True
+
+    def get_action(self, present: dict[str, int], now: float) -> dict[str, int]:
+        self._present = dict(present)
+        if self.targets is None:
+            self.targets = dict(present)
+        for key in self.poll_keys():
+            self.handle_key(key)
+        for name in self.targets:  # 리드 제한
+            lo, hi = present[name] - self.lead, present[name] + self.lead
+            self.targets[name] = max(lo, min(hi, self.targets[name]))
+        self.last_status = "  ".join(
+            f"{'[' + n + ']' if i == self.active else n}:{present[n]}->{self.targets[n]}"
+            for i, n in enumerate(self.joint_names)
+        ) + f"  step={self.step}"
+        return dict(self.targets)
+
+    def is_done(self) -> bool:
+        return self._quit
+
+    def disconnect(self) -> None:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # 플레이스홀더 1: 리더 암 (lerobot Teleoperator / SO-ARM leader 구조)
 #
