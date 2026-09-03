@@ -11,3 +11,6 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", ATTRS{seria
 
 # 같은 종류의 다른 어댑터(시리얼 미지정)도 최소한 권한은 열어준다
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", MODE="0666", GROUP="dialout"
+
+# 다이나믹셀 어댑터: ROBOTIS U2D2 (FTDI FT232H, 0403:6014), serial FTAAMMJV
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6014", ATTRS{serial}=="FTAAMMJV", MODE="0666", GROUP="dialout", SYMLINK+="sopo_dynamixel"
