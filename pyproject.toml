@@ -20,6 +20,7 @@ description = [
     "trimesh",
     "fast-simplification",
     "mujoco>=3.0",
+    "pin",               # pinocchio — sopo/dynamics.py 중력 토크 계산
     "onshape-to-robot",  # CAD 재export 시에만 필요 (Onshape API 키 필요)
 ]
 

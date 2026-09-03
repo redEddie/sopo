@@ -81,10 +81,11 @@ ROS 패키지 경로(`package://`)를 쓰는 URDF는 이 뷰어에서 메시가 
 ## 중력보상 준비 상태
 
 - 모델: `arm_no_ee.urdf` (6-DOF, joint_6은 continuous)
-- 그리퍼 관성: 주입됨 (robonine 실측 기반 추정치, `link_masses.yaml`)
-- 팔 링크 관성: **미측정** — 저울로 재서 `link_masses.yaml`에 적으면 자동 주입된다
-- 다음 단계: pinocchio 등으로 G(q) 계산 → Feetech 전류 지령으로 변환
-  (토크-전류 환산은 cookbook/06, 07의 실측 절차 참고)
+- 질량: 팔 링크는 실측 주입 완료 (`link_masses.yaml`), 그리퍼 ee는 추정치
+- `sopo/dynamics.py`: pinocchio로 G(q) 계산 → Present_Load(‰) 예측, 외력 토크 추정
+- 검증: `cookbook/17_gravity_check.py` — 자세별로 모터 부하와 모델 예측을 비교
+  (최초 1회 `--calibrate-vertical`로 zero 기준 캡처 필요)
+- 다음 단계: G(q)를 제어 루프 피드포워드로 연결 (토크-전류 환산은 06/07 참고)
 
 ## 참고 레퍼런스
 

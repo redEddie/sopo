@@ -1,31 +1,69 @@
-# 링크별 질량 [kg] — postprocess.py가 읽어 COM/관성텐서를 계산해 URDF에 주입한다.
+# 링크별 파트 질량 [kg] — postprocess.py가 읽어 COM/관성텐서를 합성해 URDF에 주입한다.
 #
-# 두 가지 형식:
-#   1) 총질량만:        link_1: 0.42      → COM/관성은 메시 균일밀도로 추정
-#   2) 파트별/모터 분리 (재질이 섞인 링크에서 정확 — 카본 파이프와 출력물을 따로 잰다):
-#     link_2:
-#       parts:                        # 키는 메시(STL) 이름. 각 파트를 저울로 측정
-#         link_2_1: 0.12              #   PETG 모터 브라켓
-#         link_2: 0.23                #   카본 파이프
-#       motors:                       # 모터는 스펙시트 무게 + CAD에서 읽은 위치(링크 프레임)
-#         - {mass: 0.0745, xyz: [0.01, 0.05, 0.02]}   # STS3250
-#     (parts 대신 shell: <kg>로 쉘 전체를 한 번에 적는 것도 가능)
+# 사용법:
+#   - 출력물 파트: 저울로 재서 null 대신 숫자를 넣는다 (null이면 그 파트는 무게 0 취급 + 경고).
+#   - 모터: 스펙시트 무게를 미리 넣어두었다 (실측하면 그 값으로 교체).
+#   - STL 파일명의 "__2"는 같은 부품의 두 번째 인스턴스.
+#   - 파트별 COM은 각 메시의 기하에서 정확히 계산되므로, 무게만 채우면 된다.
+#   - parts 대신 총질량(link_1: 0.42)이나 shell+motors 형식도 가능 (자세한 건 README).
 #
-# 모터 무게 스펙: SM8512BL 0.215kg / STS3250 0.0745kg / STS3215 ~0.06kg
-# null이면 질량 플레이스홀더(1e-9)가 유지된다. 베이스는 월드에 고정이라 역학에 영향 없음.
-#
+# 모터 스펙 무게: SM8512BL 0.215kg / STS3250 0.0745kg / STS3215 ~0.06kg
+# 검증 팁: 링크 통째로도 재서 parts 합산과 비교할 것.
 # 주의: 중력보상(G(q))은 질량과 COM으로만 결정되고, 그중에서도 회전축에 수직인
 # COM 성분만 중요하다. 축 방향 성분의 오차는 결과에 영향이 없다.
 
-# TODO: 실물 저울 측정으로 교체
-link_1: null
-link_2: null
-link_3: null
-link_4: null
-link_5: null
+# 베이스: 월드에 고정이라 역학 영향은 없지만 기록용으로 둠 (J1 모터 포함)
+sopo_desktop_base: null
+#   parts:
+#     sopo_desktop_base: 0.187
+#     simple61814: 0.133
+#     simple_sm8512bl: 0.215        # J1 모터 SM8512BL
 
-# 그리퍼: robonine SO-ARM100/101 Parallel-Gripper URDF의 실측값 기반 추정치.
-# 단 robonine은 서보 혼을 그리퍼에 포함하고 우리는 이전 링크에 포함하므로 ~수십 g 오차 가능.
-ee: 0.556
-right_finger: 0.154
-left_finger: 0.154
+link_1:                             # J1 출력부 + J2 듀얼 모터
+  parts:
+    link1: 0.91
+    joint_2_simple_sts3250: 0.0745
+    joint_2_simple_sts3250__2: 0.0745
+  motors:
+    # simple61814 베어링: J1 회전축 위 부품이라 점질량으로 처리
+    # (축상 질량은 중력 토크 기여 0, 관성 기여도 무시할 수준)
+    - {mass: 0.133, xyz: [0, 0, 0]}
+
+link_2:                             # J2 출력부 + J3 듀얼 모터
+  parts:
+    link_2_pipe: 0.113
+    link_2_holder: 0.072
+    link_2_holder__2: 0.090
+    joint_3_simple_sts3250: 0.0745
+    joint_3_simple_sts3250__2: 0.0745
+
+link_3:                             # J3 출력부 + J4 모터
+  parts:
+    link_3: 0.056
+    joint_4_simple_sts3250: 0.0745
+
+link_4:                             # J4 출력부 + J5 모터
+  parts:
+    link_4_pipe: 0.100
+    link_4_hold_1: 0.055
+    link_4_holder2: 0.067
+    link_4_holder_3: 0.015
+    simple_6704: 0.005
+    simple_6704__2: 0.005
+    joint_5_simple_sts3215_12v: 0.06
+
+link_5:                             # J5 출력부 + J6 모터
+  parts:
+    link_5: 0.027         
+    joint_6_simple_sts3215_12v: 0.06
+
+# 그리퍼: robonine 실측 추정치(총 0.556kg)를 파트별로 배분한 플레이스홀더. 실측으로 교체.
+ee:
+  parts:
+    ee: 0.45                        # 추정 (robonine 총량 - 모터 - 로드) — TODO 실측
+    simple_motor: 0.06              # 그리퍼 서보 STS3215
+    rod_d6_125: 0.006               # 추정 (d6x125mm 카본 ~5.5g) — TODO 실측
+    rod_d6_125__2: 0.006            # 추정 — TODO 실측
+
+right_finger: 0.154                 # robonine 실측 기반 추정치 — 실측으로 교체
+left_finger: 0.154                  # robonine 실측 기반 추정치 — 실측으로 교체
