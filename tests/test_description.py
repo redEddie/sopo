@@ -54,8 +54,8 @@ def test_joint_limits_from_cad(robot):
     expected = {  # Onshape mate 리밋 [rad]
         "joint_1": (-3.1416, 3.1416),
         "joint_2": (-1.65806, 1.65806),
-        "joint_3": (-1.5708, 1.6057),
-        "joint_4": (-3.12414, 3.12414),
+        "joint_3": (-1.5708, 1.5708),
+        "joint_4": (-3.1416, 3.1416),
         "joint_5": (-1.74533, 1.74533),
     }
     for name, (lo, hi) in expected.items():
@@ -139,3 +139,62 @@ def test_viewer_xml_exists_and_matches():
     assert set(ARM_JOINTS) <= names
     actuators = {a.get("name") for a in root.iter("position")}
     assert actuators == {f"act_{n}" for n in names if n}
+
+
+def test_combine_masses_physics():
+    """쉘+모터 합성: 질량중심 가중평균과 평행축 정리."""
+    import sys
+    sys.path.insert(0, str(DESC))
+    import numpy as np
+    from postprocess import combine_masses
+
+    # 모터 없음: 쉘 그대로
+    m, com, I = combine_masses(1.0, [0, 0, 0], np.eye(3) * 0.01, [])
+    assert m == 1.0
+    assert np.allclose(com, [0, 0, 0])
+    assert np.allclose(I, np.eye(3) * 0.01)
+
+    # 쉘 1kg@원점 + 모터 0.5kg@(0.1,0,0)
+    m, com, I = combine_masses(1.0, [0, 0, 0], np.eye(3) * 0.01,
+                               [{"mass": 0.5, "xyz": [0.1, 0, 0]}])
+    assert m == 1.5
+    assert np.allclose(com, [1 / 30, 0, 0])
+    # x축 방향 오프셋은 iyy/izz에만 기여 (평행축 정리)
+    d_shell = 1 / 30
+    d_motor = 0.1 - 1 / 30
+    assert I[1, 1] == pytest.approx(0.01 + 1.0 * d_shell**2 + 0.5 * d_motor**2)
+    assert I[0, 0] == pytest.approx(0.01)  # ixx는 불변
+
+
+def test_parts_format_masses(tmp_path, monkeypatch):
+    """parts 형식: link_2(파이프+홀더+듀얼모터)에 파트별 무게를 넣으면 합성된다."""
+    import sys
+    sys.path.insert(0, str(DESC))
+    import postprocess
+
+    yaml_file = tmp_path / "m.yaml"
+    yaml_file.write_text(
+        "link_2:\n"
+        "  parts: {link_2_pipe: 0.23, link_2_holder: 0.12, link_2_holder__2: 0.12,\n"
+        "          joint_3_simple_sts3250: 0.0745, joint_3_simple_sts3250__2: 0.0745}\n"
+    )
+    monkeypatch.setattr(postprocess, "MASSES_YAML", yaml_file)
+
+    root = parse("robot.urdf")
+    msgs = postprocess.inject_link_dynamics(root)
+    link = {l.get("name"): l for l in root.findall("link")}["link_2"]
+    mass = float(link.find("inertial/mass").get("value"))
+    assert mass == 0.23 + 0.12 + 0.12 + 0.0745 + 0.0745
+    assert any("link_2" in m for m in msgs)
+
+
+def test_parts_format_rejects_unknown_part(tmp_path, monkeypatch):
+    import sys
+    sys.path.insert(0, str(DESC))
+    import postprocess
+
+    yaml_file = tmp_path / "m.yaml"
+    yaml_file.write_text("link_2:\n  parts: {nonexistent: 0.1}\n")
+    monkeypatch.setattr(postprocess, "MASSES_YAML", yaml_file)
+    with pytest.raises(KeyError):
+        postprocess.inject_link_dynamics(parse("robot.urdf"))

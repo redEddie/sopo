@@ -52,7 +52,10 @@ python postprocess.py     # 멱등 — 여러 번 실행해도 같은 결과
 ### 보정 포인트
 
 - **모터 스펙 변경**: `postprocess.py`의 `JOINT_SPECS` (정격 토크 기준, 듀얼 관절은 2배)
-- **질량 실측 후**: `GRIPPER_MASS` 및 팔 링크 질량 (현재 그리퍼만 robonine 실측 기반 추정치)
+- **질량**: `link_masses.yaml`에 실측 무게를 적는다 (그 조인트와 함께 회전하는 모든 것,
+  모터 포함). COM/관성은 postprocess가 메시 기하에서 균일 밀도로 자동 계산한다.
+  Onshape에서 파트에 재질을 지정하고 재export하면 CAD 계산값이 들어오며,
+  이 경우 양쪽 값을 비교해 더 정확한 쪽을 쓰면 된다.
 - **관절 리밋**: Onshape mate 리밋이 소스. J1은 리밋 없으면 ±180°로 export됨
 
 ## 시각화
@@ -78,8 +81,8 @@ ROS 패키지 경로(`package://`)를 쓰는 URDF는 이 뷰어에서 메시가 
 ## 중력보상 준비 상태
 
 - 모델: `arm_no_ee.urdf` (6-DOF, joint_6은 continuous)
-- 그리퍼 관성: 주입됨 (robonine 실측 기반 추정치, `GRIPPER_MASS`)
-- 팔 링크 관성: **미측정** — 실측 후 postprocess에 주입 단계를 추가한다
+- 그리퍼 관성: 주입됨 (robonine 실측 기반 추정치, `link_masses.yaml`)
+- 팔 링크 관성: **미측정** — 저울로 재서 `link_masses.yaml`에 적으면 자동 주입된다
 - 다음 단계: pinocchio 등으로 G(q) 계산 → Feetech 전류 지령으로 변환
   (토크-전류 환산은 cookbook/06, 07의 실측 절차 참고)
 

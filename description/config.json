@@ -1,8 +1,8 @@
 {
-    // Onshape 어셈블리 URL (어셈블리 탭에서 복사)
-    "url": "https://cad.onshape.com/documents/d32c1d075f499754300cc0e8/w/d1ef2c0f34cc9c0b900a78d9/e/0a3adc18ca94d3f674ac7808",
+    // Onshape 어셈블리 URL (어셈블리 탭에서 복사) — 재질/파트 분리 확정 버전
+    "url": "https://cad.onshape.com/documents/d32c1d075f499754300cc0e8/v/a87751ec0a94c063d1ceb088/e/0a3adc18ca94d3f674ac7808",
     "output_format": "urdf",
     "robot_name": "sopo",
-    // export 직후 URDF 후처리 (joint_6_passive continuous 변환, 메시 경로 정리)
+    // export 직후 URDF 후처리 (joint_6 continuous, 메시 이원화, mimic, 관성/스펙 주입)
     "post_import_commands": ["../.venv/bin/python postprocess.py"]
 }

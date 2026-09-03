@@ -14,9 +14,9 @@ config.json의 post_import_commands에 등록되어 export 직후 자동 실행�
 4. 핑거 구조: left_finger_joint가 right_finger_joint를 mimic하도록 추가한다
    (robonine SO-101 parallel gripper와 같은 컨셉. 두 조인트의 축이 CAD에서 이미
    반대 방향으로 잡혀 있어 multiplier는 +1). 리밋은 CAD의 +/-0.042m를 그대로 쓴다.
-5. 그리퍼 링크(ee, 핑거)에 질량/관성 추정치를 넣는다. 수치는 robonine
-   SO-ARM100/101 Parallel-Gripper URDF의 실측값에서 가져오되, COM/관성텐서는
-   각 링크의 메시에서 재계산해 현재 프레임에 맞춘다. (실측 저울 교정 예정)
+5. link_masses.yaml의 실측 질량을 각 링크에 주입한다. COM/관성텐서는
+   visual 메시(여러 파트면 합쳐서)를 균일 밀도로 계산한 뒤 실측 질량으로
+   스케일한다. 질량이 null인 링크는 플레이스홀더 유지.
 6. effort/velocity 플레이스홀더(10, 10)를 STS3215 실사양으로 교체한다.
 7. ee/핑거를 잘라낸 arm_no_ee.urdf를 생성한다. 팔은 빈 flange 프레임 링크로
    끝난다 (Franka FR3의 link8 컨벤션). 제어/보상 코드는 이 파일을 기준으로 삼는다.
@@ -45,13 +45,17 @@ COLLISION_FACES = 2000
 JOINT6_SOURCES = ("joint_6", "J6", "joint_6_passive")
 JOINT6_NAME = "joint_6"
 
+# Onshape mate/파트명이 갱신돼도 표준 이름으로 정규화한다.
+JOINT_RENAMES = {"joint_2_main": "joint_2", "joint_3_main": "joint_3"}
+LINK_RENAMES = {"link1": "link_1", "link_2_holder": "link_2", "simple_6704": "link_4"}
+
 # 핑거 mimic: left가 right를 따른다 (축이 반대라 multiplier +1)
 FINGER_DRIVING_JOINT = "right_finger_joint"
 FINGER_DRIVEN_JOINT = "left_finger_joint"
 
-# 그리퍼 링크 질량 추정치 [kg]. robonine SO-ARM100/101 Parallel-Gripper URDF의
-# 실측값(gripper_base 0.556, clamp 0.154). TODO: 실물 저울 측정으로 교체.
-GRIPPER_MASS = {"ee": 0.556, "right_finger": 0.154, "left_finger": 0.154}
+# 링크별 질량 [kg]은 link_masses.yaml이 소스. null이면 플레이스홀더 유지.
+# COM/관성텐서는 메시 기하에서 균일 밀도로 자동 계산해 주입한다.
+MASSES_YAML = HERE / "link_masses.yaml"
 
 # 관절별 동작 사양: (effort [N·m 또는 N], velocity [rad/s 또는 m/s]).
 # effort는 스톨이 아니라 정격(연속) 토크 기준. export 플레이스홀더(10/10) 대체.
@@ -106,30 +110,99 @@ def split_mesh(stl: Path) -> tuple[list[str], str | None]:
     return msgs, collision_name
 
 
-def inject_gripper_dynamics(root: ET.Element) -> list[str]:
-    """그리퍼 링크에 질량/관성을 넣는다. COM과 관성텐서는 visual 메시에서 계산."""
+def combine_entries(entries):
+    """(질량, COM, 관성텐서@COM 또는 None=점질량) 목록을 평행축 정리로 합성한다.
+
+    반환: (총질량, COM, 관성텐서@COM). 순수 함수라 단위 테스트 가능.
+    """
+    import numpy as np
+
+    entries = [(m, np.asarray(c), np.zeros((3, 3)) if I is None else np.asarray(I))
+               for m, c, I in entries]
+    total = sum(m for m, _, _ in entries)
+    com = sum(m * c for m, c, _ in entries) / total
+    inertia = np.zeros((3, 3))
+    for m, c, I_own in entries:
+        d = c - com
+        inertia += I_own + m * (np.dot(d, d) * np.eye(3) - np.outer(d, d))
+    return total, com, inertia
+
+
+def combine_masses(shell_mass, shell_com, shell_inertia, motors):
+    """쉘(관성텐서 보유) + 모터 점질량들을 합성해 (총질량, COM, 관성텐서@COM)을 반환."""
+    entries = [(shell_mass, shell_com, shell_inertia)]
+    entries += [(m["mass"], m["xyz"], None) for m in motors]
+    return combine_entries(entries)
+
+
+def inject_link_dynamics(root: ET.Element) -> list[str]:
+    """link_masses.yaml의 질량 정보를 링크에 주입한다.
+
+    형식 (link_masses.yaml 참고):
+      - 숫자: 총질량. COM/관성은 메시 균일 밀도로 계산.
+      - {shell: kg, motors: [...]}: 쉘(메시 균일) + 모터(점질량) 합성.
+      - {parts: {메시명: kg}, motors: [...]}: 파트별 실측 무게. 카본 파이프 +
+        출력물처럼 재질이 섞인 링크에서 정확하다. 각 파트의 COM/관성은 자기
+        메시에서 계산하고 실측 무게로 스케일한다.
+    """
     import numpy as np
     import trimesh
+    import yaml
 
+    masses = {k: v for k, v in yaml.safe_load(MASSES_YAML.read_text()).items() if v}
     changed = []
     for link in root.findall("link"):
         name = link.get("name")
-        if name not in GRIPPER_MASS:
+        if name not in masses:
             continue
-        visual = link.find("visual")
-        mesh_tag = visual.find("geometry/mesh")
-        origin = visual.find("origin")
-        xyz = tuple(float(v) for v in origin.get("xyz", "0 0 0").split())
-        rpy = tuple(float(v) for v in origin.get("rpy", "0 0 0").split())
 
-        mesh = trimesh.load(HERE / mesh_tag.get("filename"))
-        props = mesh.mass_properties  # 밀도=1 기준
-        target = GRIPPER_MASS[name]
-        ratio = target / props["mass"]  # 같은 형상에서 관성은 질량에 비례
+        # 한 링크가 여러 파트(visual)를 가진다 — 파트별로 링크 프레임 변환 후 보관
+        parts = []  # (메시 스템, 변환된 메시, mass_properties)
+        for visual in link.findall("visual"):
+            mesh_tag = visual.find("geometry/mesh")
+            if mesh_tag is None:
+                continue
+            origin = visual.find("origin")
+            xyz = np.fromstring(origin.get("xyz", "0 0 0"), sep=" ")
+            rpy = tuple(float(v) for v in origin.get("rpy", "0 0 0").split())
+            part = trimesh.load(HERE / mesh_tag.get("filename"))
+            T = np.eye(4)
+            T[:3, :3] = rpy_matrix(rpy)
+            T[:3, 3] = xyz
+            part.apply_transform(T)  # 링크 프레임으로
+            parts.append((Path(mesh_tag.get("filename")).stem, part, part.mass_properties))
+        if not parts:
+            continue
 
-        R = rpy_matrix(rpy)
-        com = R @ props["center_mass"] + np.array(xyz)  # 링크 프레임 기준 COM
-        inertia = R @ (props["inertia"] * ratio) @ R.T  # COM 기준 텐서, 링크 축 정렬
+        spec = masses[name]
+        motors = spec.get("motors") or [] if isinstance(spec, dict) else []
+
+        if isinstance(spec, dict) and "parts" in spec:
+            # 파트별 실측: 메시 스템명으로 매칭. 오탈자 방지를 위해 엄격 검사.
+            entries = [(m["mass"], m["xyz"], None) for m in motors]
+            for stem, part, props in parts:
+                part_mass = spec["parts"].get(stem)
+                if part_mass is None:
+                    print(f"[postprocess] WARNING: {name}의 파트 {stem}에 무게가 없음, 건너뜀", file=sys.stderr)
+                    continue
+                entries.append((float(part_mass), props["center_mass"],
+                                props["inertia"] * (float(part_mass) / props["mass"])))
+            unknown = set(spec["parts"]) - {stem for stem, _, _ in parts}
+            if unknown:
+                raise KeyError(f"{name}: yaml에 있는데 URDF에 없는 파트: {unknown}")
+            target, com, inertia = combine_entries(entries)
+        else:
+            merged = trimesh.util.concatenate([part for _, part, _ in parts])
+            props = merged.mass_properties  # 밀도=1 기준, 링크 프레임 기준
+            if isinstance(spec, dict):  # 쉘 균일 + 모터
+                shell_mass = float(spec["shell"])
+                target, com, inertia = combine_masses(
+                    shell_mass, props["center_mass"],
+                    props["inertia"] * (shell_mass / props["mass"]), motors)
+            else:  # 총질량만
+                target = float(spec)
+                inertia = props["inertia"] * (target / props["mass"])  # 관성은 질량에 비례
+                com = props["center_mass"]
 
         old = link.find("inertial")
         if old is not None:
@@ -144,8 +217,9 @@ def inject_gripper_dynamics(root: ET.Element) -> list[str]:
                   inertia[1, 1], inertia[1, 2], inertia[2, 2])
         ET.SubElement(inertial, "inertia").attrib = {
             k: f"{v:.6g}" for k, v in zip(keys, values)}
-        link.insert(list(link).index(visual), inertial)
-        changed.append(f"{name}: mass={target}kg, COM=({com[0]:.4f},{com[1]:.4f},{com[2]:.4f})")
+        first_visual = link.find("visual")
+        link.insert(list(link).index(first_visual), inertial)
+        changed.append(f"{name}: mass={target:.4g}kg, COM=({com[0]:.4f},{com[1]:.4f},{com[2]:.4f})")
     return changed
 
 
@@ -280,6 +354,22 @@ def main() -> int:
         print(f"[postprocess] ERROR: joint_6 {JOINT6_SOURCES} not found", file=sys.stderr)
         return 1
 
+    # 조인트/링크 이름 정규화 (export 이름이 달라져도 하류 스펙/yaml 키를 안정화)
+    for joint in root.findall("joint"):
+        if joint.get("name") in JOINT_RENAMES:
+            new = JOINT_RENAMES[joint.get("name")]
+            changed.append(f"joint {joint.get('name')!r} -> {new!r}")
+            joint.set("name", new)
+    for link in root.findall("link"):
+        if link.get("name") in LINK_RENAMES:
+            new = LINK_RENAMES[link.get("name")]
+            changed.append(f"link {link.get('name')!r} -> {new!r}")
+            link.set("name", new)
+    for tag in ("parent", "child"):
+        for ref in root.iter(tag):
+            if ref.get("link") in LINK_RENAMES:
+                ref.set("link", LINK_RENAMES[ref.get("link")])
+
     mesh_count = 0
     for mesh in root.iter("mesh"):
         filename = mesh.get("filename", "")
@@ -314,7 +404,7 @@ def main() -> int:
             mesh.set("filename", f"assets/{collision_files[stem]}")
 
     changed.extend(tune_joints(root))
-    changed.extend(inject_gripper_dynamics(root))
+    changed.extend(inject_link_dynamics(root))
 
     ET.indent(tree, space="  ")
     tree.write(URDF, encoding="utf-8", xml_declaration=True)
