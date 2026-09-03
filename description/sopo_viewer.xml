@@ -1,0 +1,85 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mujoco model="sopo">
+  <compiler angle="radian" />
+  <option>
+    <flag contact="disable" gravity="disable" />
+  </option>
+  <asset>
+    <mesh name="sopo_desktop_base" content_type="model/stl" file="assets/sopo_desktop_base.stl" />
+    <mesh name="link_1" content_type="model/stl" file="assets/link_1.stl" />
+    <mesh name="link_1_collision" content_type="model/stl" file="assets/link_1_collision.stl" />
+    <mesh name="link_2_1" content_type="model/stl" file="assets/link_2_1.stl" />
+    <mesh name="link_2_1_collision" content_type="model/stl" file="assets/link_2_1_collision.stl" />
+    <mesh name="link_2" content_type="model/stl" file="assets/link_2.stl" />
+    <mesh name="link_2_collision" content_type="model/stl" file="assets/link_2_collision.stl" />
+    <mesh name="link_3" content_type="model/stl" file="assets/link_3.stl" />
+    <mesh name="link_3_collision" content_type="model/stl" file="assets/link_3_collision.stl" />
+    <mesh name="link_4_1" content_type="model/stl" file="assets/link_4_1.stl" />
+    <mesh name="link_4_1_collision" content_type="model/stl" file="assets/link_4_1_collision.stl" />
+    <mesh name="link_4" content_type="model/stl" file="assets/link_4.stl" />
+    <mesh name="link_4_collision" content_type="model/stl" file="assets/link_4_collision.stl" />
+    <mesh name="link_5" content_type="model/stl" file="assets/link_5.stl" />
+    <mesh name="link_5_collision" content_type="model/stl" file="assets/link_5_collision.stl" />
+    <mesh name="ee" content_type="model/stl" file="assets/ee.stl" />
+    <mesh name="ee_collision" content_type="model/stl" file="assets/ee_collision.stl" />
+    <mesh name="right_finger" content_type="model/stl" file="assets/right_finger.stl" />
+    <mesh name="right_finger_collision" content_type="model/stl" file="assets/right_finger_collision.stl" />
+    <mesh name="left_finger" content_type="model/stl" file="assets/left_finger.stl" />
+    <mesh name="left_finger_collision" content_type="model/stl" file="assets/left_finger_collision.stl" />
+  </asset>
+  <worldbody>
+    <geom pos="0 0.000980992 0.0637" quat="1 0 0 0" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.768627 0.886275 0.952941 1" density="0" mesh="sopo_desktop_base" />
+    <body name="link_1" pos="0 0.000980992 0.0777" quat="1.32679e-06 1 0 0">
+      <inertial pos="0 0 0" mass="0.1" diaginertia="1e-4 1e-4 1e-4" />
+      <joint name="joint_1" range="-3.14159 3.14159" actuatorfrcrange="-2.7 2.7" damping="1" />
+      <geom pos="0 0 -0.0632" quat="1.32679e-06 1 0 0" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.647059 0.647059 0.647059 1" density="0" mesh="link_1" />
+      <body name="link_2" pos="0 0 -0.0412" quat="0.499998 0.5 -0.500002 -0.5">
+        <inertial pos="0 0 0" mass="0.1" diaginertia="1e-4 1e-4 1e-4" />
+        <joint name="joint_2" range="-1.65806 1.65806" actuatorfrcrange="-3.1 3.1" damping="1" />
+        <geom pos="5.48697e-07 -0.3429 0" quat="0.707105 0 0.707108 0" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.647059 0.647059 0.647059 1" density="0" mesh="link_2_1" />
+        <geom pos="0 -0.022 0" quat="0.499998 0.5 0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.231373 0.380392 0.705882 1" density="0" mesh="link_2" />
+        <body name="link_3" pos="5.48697e-07 -0.3429 0">
+          <inertial pos="0 0 0" mass="0.1" diaginertia="1e-4 1e-4 1e-4" />
+          <joint name="joint_3" range="-1.5708 1.6057" actuatorfrcrange="-3.1 3.1" damping="1" />
+          <geom pos="0.068 -0.0619 0" quat="0.499998 0.5 0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.615686 0.811765 0.929412 1" density="0" mesh="link_3" />
+          <body name="link_4" pos="-0.013 -0.0619 0" quat="9.38184e-07 -0.707105 9.38187e-07 0.707108">
+            <inertial pos="0 0 0" mass="0.1" diaginertia="1e-4 1e-4 1e-4" />
+            <joint name="joint_4" range="-3.12414 3.12414" actuatorfrcrange="-1.6 1.6" damping="1" />
+            <geom pos="0 -4.74901e-07 -0.433326" quat="9.38184e-07 9.38187e-07 0.707108 0.707105" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.615686 0.811765 0.929412 1" density="0" mesh="link_4_1" />
+            <geom pos="0 0 -0.081" quat="0.707105 -0.707108 0 0" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.980392 0.713725 0.00392157 1" density="0" mesh="link_4" />
+            <body name="link_5" pos="0 -4.74889e-07 -0.3726" quat="0.707105 0 -0.707108 0">
+              <inertial pos="0 0 0" mass="0.1" diaginertia="1e-4 1e-4 1e-4" />
+              <joint name="joint_5" range="-1.74533 1.74533" actuatorfrcrange="-1.5 1.5" damping="1" />
+              <geom pos="-0.0607257 -1.2e-11 0" quat="0.499998 -0.5 -0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.980392 0.713725 0.00392157 1" density="0" mesh="link_5" />
+              <body name="ee" pos="-0.0607257 -1.2e-11 0" quat="9.38184e-07 0.707105 -9.38187e-07 0.707108">
+                <inertial pos="-0.000150562 -0.00468101 -0.043056" quat="0.290839 0.645307 0.293029 0.642749" mass="0.556" diaginertia="0.000874275 0.000803603 0.000314357" />
+                <joint name="joint_6" actuatorfrcrange="-1.5 1.5" damping="1" />
+                <geom pos="-3.99459e-05 2.07734e-06 -0.052" quat="1.32679e-06 1 0 0" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.615686 0.811765 0.929412 1" density="0" mesh="ee" />
+                <body name="right_finger" pos="-0.0580399 -0.0159979 -0.063" quat="0.499998 0.5 -0.500002 -0.5">
+                  <inertial pos="-0.0144477 -0.0150978 -0.0105871" quat="0.577873 0.508915 -0.474326 0.426713" mass="0.154" diaginertia="0.000104146 9.15897e-05 3.98104e-05" />
+                  <joint name="right_finger_joint" type="slide" range="-0.042 0" actuatorfrcrange="-1.5 1.5" damping="1" />
+                  <geom pos="-0.016 0.011 -0.058" quat="0.499998 0.5 0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.647059 0.647059 0.647059 1" density="0" mesh="right_finger" />
+                </body>
+                <body name="left_finger" pos="0.0579601 -0.0159979 -0.063" quat="0.499998 -0.5 0.500002 -0.5">
+                  <inertial pos="-0.0175523 0.0150978 -0.0105871" quat="0.474326 0.426713 -0.577873 0.508915" mass="0.154" diaginertia="0.000104146 9.15897e-05 3.98104e-05" />
+                  <joint name="left_finger_joint" type="slide" range="-0.042 0" actuatorfrcrange="-1.5 1.5" damping="1" />
+                  <geom pos="-0.016 -0.011 -0.058" quat="0.499998 -0.5 -0.5 -0.500002" type="mesh" contype="0" conaffinity="0" group="1" rgba="0.231373 0.380392 0.705882 1" density="0" mesh="left_finger" />
+                </body>
+              </body>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+  <actuator>
+    <position name="act_joint_1" joint="joint_1" kp="20" ctrlrange="-3.14159 3.14159" />
+    <position name="act_joint_2" joint="joint_2" kp="20" ctrlrange="-1.65806 1.65806" />
+    <position name="act_joint_3" joint="joint_3" kp="20" ctrlrange="-1.5708 1.6057" />
+    <position name="act_joint_4" joint="joint_4" kp="20" ctrlrange="-3.12414 3.12414" />
+    <position name="act_joint_5" joint="joint_5" kp="20" ctrlrange="-1.74533 1.74533" />
+    <position name="act_joint_6" joint="joint_6" kp="20" ctrlrange="-3.14159 3.14159" />
+    <position name="act_right_finger_joint" joint="right_finger_joint" kp="20" ctrlrange="-0.042 0" />
+    <position name="act_left_finger_joint" joint="left_finger_joint" kp="20" ctrlrange="-0.042 0" />
+  </actuator>
+</mujoco>

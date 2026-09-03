@@ -8,3 +8,6 @@ venv/
 
 # 블랙박스 로그
 logs/
+
+# Onshape API 키 (절대 커밋 금지)
+configs/onshape.env

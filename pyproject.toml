@@ -14,6 +14,14 @@ dependencies = [
 
 [project.optional-dependencies]
 test = ["pytest>=8.0"]
+# description/ 파이프라인 (로봇 모델 후처리·시각화). 하드웨어 제어와 무관.
+description = [
+    "numpy",
+    "trimesh",
+    "fast-simplification",
+    "mujoco>=3.0",
+    "onshape-to-robot",  # CAD 재export 시에만 필요 (Onshape API 키 필요)
+]
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -50,6 +50,9 @@ configs/
   arm.yaml         이 암의 정의 (포트/관절/K/range_ticks/안전 기본값) — 커밋됨
   waypoints.example.yaml 웨이포인트 예시
   calibration.yaml 실측 관절 한계/토크 캡 (05/06 스크립트가 생성, 실행 스크립트가 자동 적용)
+description/     로봇 모델 (URDF) — Onshape export + 후처리 파이프라인
+                   robot.urdf(전체) / arm_no_ee.urdf(팔만, 제어 기준) / sopo_viewer.xml
+                   산출물은 전부 커밋 — Onshape API 없이 사용 가능. 자세한 건 description/README.md
 ```
 
 ## 빠른 시작
