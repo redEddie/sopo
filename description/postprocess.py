@@ -49,6 +49,19 @@ JOINT6_NAME = "joint_6"
 JOINT_RENAMES = {"joint_2_main": "joint_2", "joint_3_main": "joint_3"}
 LINK_RENAMES = {"link1": "link_1", "link_2_holder": "link_2", "simple_6704": "link_4"}
 
+# REP-103 축 정규화: 이 조인트들의 축을 뒤집는다 (axis "0 0 1" -> "0 0 -1",
+# 리밋 부호 교환). 물리 기하는 불변이고 +q의 방향 규약만 바뀐다.
+#   joint_1: yaw 축이 아래(-z)였던 것을 위로 — +q1 = 위에서 봐서 반시계
+#   joint_4/6: roll 축을 어프로치 방향으로 — +q = 어프로치 방향 오른손 법칙
+#   joint_5: J2/J3과 반대였던 pitch를 통일 — +q = 전방으로 기울기
+AXIS_FLIP_JOINTS = ("joint_1", "joint_4", "joint_5", "joint_6")
+
+# 베이스 프레임: 어프로치 방향이 +y로 export되므로, -90도 z회전한 base_link를
+# 새 루트로 얹어 REP-103(X=전방, Y=좌, Z=상)을 만족시킨다.
+BASE_LINK = "base_link"
+BASE_RPY = "0 0 -1.57079633"  # sopo_desktop_base를 base_link 기준 이 각도로
+CURRENT_ROOT = "sopo_desktop_base"
+
 # 핑거 mimic: left가 right를 따른다 (축이 반대라 multiplier +1)
 FINGER_DRIVING_JOINT = "right_finger_joint"
 FINGER_DRIVEN_JOINT = "left_finger_joint"
@@ -223,6 +236,46 @@ def inject_link_dynamics(root: ET.Element) -> list[str]:
     return changed
 
 
+def normalize_frames(root: ET.Element) -> list[str]:
+    """REP-103 규약으로 프레임을 정규화한다: 조인트 축 정규화 + base_link 루트."""
+    changed = []
+    for joint in root.findall("joint"):
+        if joint.get("name") not in AXIS_FLIP_JOINTS:
+            continue
+        axis = joint.find("axis")
+        if axis is None or axis.get("xyz") != "0 0 1":
+            continue  # 이미 뒤집혔거나 예상과 다른 축 — 재실행 안전
+        axis.set("xyz", "0 0 -1")
+        limit = joint.find("limit")
+        if limit is not None and limit.get("lower") is not None:
+            lo = float(limit.get("lower"))
+            hi = float(limit.get("upper"))
+            limit.set("lower", f"{-hi:.12g}")
+            limit.set("upper", f"{-lo:.12g}")
+        changed.append(f"{joint.get('name')}: axis flipped (+q 방향 규약)")
+
+    if not any(l.get("name") == BASE_LINK for l in root.findall("link")):
+        base = ET.Element("link")
+        base.set("name", BASE_LINK)
+        inertial = ET.SubElement(base, "inertial")  # 파서 경고 방지 플레이스홀더
+        ET.SubElement(inertial, "origin").set("xyz", "0 0 0")
+        ET.SubElement(inertial, "mass").set("value", "1e-09")
+        ET.SubElement(inertial, "inertia").attrib = {
+            "ixx": "1e-09", "ixy": "0", "ixz": "0",
+            "iyy": "1e-09", "iyz": "0", "izz": "1e-09",
+        }
+        root.insert(0, base)
+        fixed = ET.SubElement(root, "joint")
+        fixed.set("name", "base_fixed")
+        fixed.set("type", "fixed")
+        ET.SubElement(fixed, "origin").set("xyz", "0 0 0")
+        fixed.find("origin").set("rpy", BASE_RPY)
+        ET.SubElement(fixed, "parent").set("link", BASE_LINK)
+        ET.SubElement(fixed, "child").set("link", CURRENT_ROOT)
+        changed.append(f"added {BASE_LINK} root (어프로치 = +x, REP-103)")
+    return changed
+
+
 def tune_joints(root: ET.Element) -> list[str]:
     """핑거 mimic 추가 + effort/velocity를 모터별 실사양으로 교체."""
     changed = []
@@ -314,17 +367,21 @@ def build_viewer_xml() -> str:
             inertial.set("mass", "0.1")
             inertial.set("diaginertia", "1e-4 1e-4 1e-4")
 
-    # position actuator를 달면 simulate의 Control 패널에 슬라이더가 생긴다
+    # position actuator를 달면 simulate의 Control 패널에 슬라이더가 생긴다.
+    # 포징 전용이므로 실물 스펙을 버린다: 힘 제한(actuatorfrcrange/forcerange)을
+    # 없애고 kp를 크게 — 그래야 슬라이더에 즉시 따라온다 (달랑거림 방지).
     actuator = ET.SubElement(root, "actuator")
     for joint in root.iter("joint"):
         name = joint.get("name")
         if not name:
             continue
-        joint.set("damping", "1")
+        joint.attrib.pop("actuatorfrcrange", None)
+        joint.set("damping", "20")
         position = ET.SubElement(actuator, "position")
         position.set("name", f"act_{name}")
         position.set("joint", name)
-        position.set("kp", "20")
+        position.set("kp", "2000")
+        position.set("forcerange", "-100000 100000")
         position.set("ctrlrange", joint.get("range") or "-3.14159 3.14159")
 
     ET.indent(tree, space="  ")
@@ -369,6 +426,8 @@ def main() -> int:
         for ref in root.iter(tag):
             if ref.get("link") in LINK_RENAMES:
                 ref.set("link", LINK_RENAMES[ref.get("link")])
+
+    changed.extend(normalize_frames(root))
 
     mesh_count = 0
     for mesh in root.iter("mesh"):

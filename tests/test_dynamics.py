@@ -50,7 +50,9 @@ def test_matches_pybullet(gm):
     urdf = Path(__file__).resolve().parents[1] / "description" / "arm_no_ee.urdf"
     pybullet.connect(pybullet.DIRECT)
     pybullet.setGravity(0, 0, -9.81)
-    body = pybullet.loadURDF(str(urdf), useFixedBase=True)
+    # base_fixed(고정) 관절을 병합해 pybullet의 ID가 6-DOF로 정렬되게 한다
+    body = pybullet.loadURDF(str(urdf), useFixedBase=True,
+                             flags=pybullet.URDF_MERGE_FIXED_LINKS)
     n = pybullet.getNumJoints(body)
     order = [f"J{i}" for i in range(1, 7)]
     for qdict in (q(), q(J2=0.7, J3=-0.4), q(J2=-1.2, J5=0.8), q(J3=1.4, J4=2.0)):

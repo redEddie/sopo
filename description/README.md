@@ -78,6 +78,28 @@ postprocess가 `package://`를 제거해 상대경로로 바꿔두었기 때문�
 ROS 패키지 경로(`package://`)를 쓰는 URDF는 이 뷰어에서 메시가 깨진다 — 우리가
 상대경로를 고수하는 이유 중 하나다.
 
+## 좌표계/조인트 방향 규약 (REP-103)
+
+`base_link`를 루트로 하는 프레임 규약. postprocess가 매 export마다 자동 적용한다
+(`AXIS_FLIP_JOINTS` + base_link 삽입). Onshape export 원본은 이 규약이 아니므로
+수동으로 URDF를 고치지 말 것 — 반드시 postprocess를 통한다.
+
+- **베이스 프레임**: X=전방(그리퍼 어프로치 방향), Y=좌측, Z=상방.
+  zero pose에서 flange는 (0.42, 0, 0.52) — 전방 42cm, 높이 52cm.
+- **+q 방향** (오른손 법칙, zero pose 기준):
+
+| 조인트 | 축 | +q의 물리 방향 |
+|---|---|---|
+| joint_1 (yaw) | +z | 위에서 봐서 반시계 |
+| joint_2/3 (pitch) | +y | 팁이 전방(+x)으로 기울기 |
+| joint_4 (roll) | +x | 어프로치 방향 오른손 회전 |
+| joint_5 (pitch) | +y | joint_2/3과 같은 규약 |
+| joint_6 (roll) | +x | 어프로치 방향 오른손 회전 |
+| fingers | 어프로치 좌우 | 열기/닫기 (mimic) |
+
+- **모터 틱 ↔ URDF q**: `configs/calibration.yaml`의 `gravity.dir`(관절별 ±1)이
+  이 둘의 부호 대응이다. 실기 확인은 `cookbook/18_check_directions.py`.
+
 ## 중력보상 준비 상태
 
 - 모델: `arm_no_ee.urdf` (6-DOF, joint_6은 continuous)

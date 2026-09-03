@@ -33,12 +33,17 @@ def joints_of(root):
     return {j.get("name"): j for j in root.findall("joint")}
 
 
+def movable_joints(root):
+    """base_fixed 같은 fixed 관절을 제외한 구동 관절."""
+    return {j.get("name"): j for j in root.findall("joint") if j.get("type") != "fixed"}
+
+
 def links_of(root):
     return {l.get("name"): l for l in root.findall("link")}
 
 
 def test_robot_joint_set(robot):
-    assert set(joints_of(robot)) == set(ARM_JOINTS + FINGER_JOINTS)
+    assert set(movable_joints(robot)) == set(ARM_JOINTS + FINGER_JOINTS)
 
 
 def test_joint6_is_continuous_without_limits(robot):
@@ -100,10 +105,11 @@ def test_gripper_has_real_mass(robot):
 
 
 def test_arm_variant_structure(arm):
-    joints = joints_of(arm)
+    joints = movable_joints(arm)
     links = links_of(arm)
     assert set(joints) == set(ARM_JOINTS)
     assert "flange" in links                      # Franka link8 컨벤션
+    assert "base_link" in links                   # REP-103 루트
     assert joints["joint_6"].find("child").get("link") == "flange"
     for name in ("ee", "right_finger", "left_finger"):
         assert name not in links

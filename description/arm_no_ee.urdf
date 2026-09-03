@@ -1,5 +1,12 @@
 <?xml version='1.0' encoding='utf-8'?>
 <robot name="sopo">
+  <link name="base_link">
+    <inertial>
+      <origin xyz="0 0 0" />
+      <mass value="1e-09" />
+      <inertia ixx="1e-09" ixy="0" ixz="0" iyy="1e-09" iyz="0" izz="1e-09" />
+    </inertial>
+  </link>
   <link name="sopo_desktop_base">
     <inertial>
       <origin xyz="-1.2757e-08 -0.00262566 0.0390895" rpy="0 0 0" />
@@ -54,9 +61,9 @@
   </link>
   <link name="link_1">
     <inertial>
-      <origin xyz="6.27839e-12 1.22069e-07 -0.00801675" rpy="0 0 0" />
-      <mass value="1.239" />
-      <inertia ixx="0.000403721" ixy="-5.4495e-12" ixz="-4.36675e-14" iyy="0.00113969" iyz="6.51983e-10" izz="0.00129419" />
+      <origin xyz="6.52594e-12 1.26882e-07 -0.00833285" rpy="0 0 0" />
+      <mass value="1.192" />
+      <inertia ixx="0.000400582" ixy="-5.4495e-12" ixz="-4.61263e-14" iyy="0.00113655" iyz="6.04175e-10" izz="0.00129419" />
     </inertial>
     <visual>
       <origin xyz="-0 -0 -0.0632" rpy="3.14159 -0 -0" />
@@ -376,21 +383,21 @@
     <origin xyz="-0.0611 1.2e-11 -0.0185" rpy="-0 1.5708 0" />
     <parent link="link_5" />
     <child link="flange" />
-    <axis xyz="0 0 1" />
+    <axis xyz="0 0 -1" />
     <limit effort="1.5" velocity="5.236" />
   </joint>
   <joint name="joint_5" type="revolute">
     <origin xyz="0.0185 -9.39318e-07 -0.372226" rpy="3.14159 -1.5708 0" />
     <parent link="link_4" />
     <child link="link_5" />
-    <axis xyz="0 0 1" />
+    <axis xyz="0 0 -1" />
     <limit effort="1.5" velocity="5.236" lower="-1.74533" upper="1.74533" />
   </joint>
   <joint name="joint_4" type="revolute">
     <origin xyz="-0.0619 0.013 -0.0185" rpy="-1.5708 1.5708 0" />
     <parent link="link_3" />
     <child link="link_4" />
-    <axis xyz="0 0 1" />
+    <axis xyz="0 0 -1" />
     <limit effort="1.6" velocity="7.85" lower="-3.14159" upper="3.14159" />
   </joint>
   <joint name="joint_3" type="revolute">
@@ -411,12 +418,17 @@
     <origin xyz="-0 -0 0.0777" rpy="-3.14159 0 -0" />
     <parent link="sopo_desktop_base" />
     <child link="link_1" />
-    <axis xyz="0 0 1" />
-    <limit effort="2.7" velocity="6.28" lower="-3.141592653589793" upper="3.141592653589793" />
+    <axis xyz="0 0 -1" />
+    <limit effort="2.7" velocity="6.28" lower="-3.14159265359" upper="3.14159265359" />
   </joint>
   <mujoco>
     <compiler discardvisual="false" />
   </mujoco>
+  <joint name="base_fixed" type="fixed">
+    <origin xyz="0 0 0" rpy="0 0 -1.57079633" />
+    <parent link="base_link" />
+    <child link="sopo_desktop_base" />
+  </joint>
   <link name="flange">
     <inertial>
       <origin xyz="0 0 0" />
