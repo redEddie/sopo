@@ -20,8 +20,8 @@ import argparse
 
 from sopo import FeetechBus
 from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints
-from sopo.control import read_joints
-from sopo.joints import ContinuousJoint
+from sopo.motion.control import read_joints
+from sopo.motion.joints import ContinuousJoint
 
 
 def main() -> None:

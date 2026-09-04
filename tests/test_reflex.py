@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import pytest
 
-from sopo.reflex import Event, Mode, Reflex, ReflexConfig, Trip
-from sopo.safety import SafetyLimits
+from sopo.safety.reflex import Event, Mode, Reflex, ReflexConfig, Trip
+from sopo.safety.limits import SafetyLimits
 
 
 LIMITS = SafetyLimits(torque_limit=150)

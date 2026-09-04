@@ -29,8 +29,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-sopod = "sopo.daemon:main"
-sopo = "sopo.cli:main"
+sopod = "sopo.runtime.daemon:main"
+sopo = "sopo.runtime.cli:main"
 
 [tool.setuptools]
-packages = ["sopo"]
+packages = ["sopo", "sopo.hal", "sopo.motion", "sopo.safety", "sopo.model", "sopo.runtime"]

@@ -16,9 +16,9 @@ from pathlib import Path
 
 import yaml
 
-from .dynamics import DEFAULT_URDF, GravityCal, GravityModel, build_joint_map
-from .joints import ContinuousJoint, DualMotorJoint, Joint, build_joints
-from .safety import MODEL_STALL_TORQUE_KGCM, SafetyLimits
+from .model.dynamics import DEFAULT_URDF, GravityCal, GravityModel, build_joint_map
+from .motion.joints import ContinuousJoint, DualMotorJoint, Joint, build_joints
+from .safety.limits import MODEL_STALL_TORQUE_KGCM, SafetyLimits
 
 DEFAULT_BAUDRATE = 1_000_000
 

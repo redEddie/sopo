@@ -12,9 +12,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from sopo.client import SopoClient
+from sopo.runtime.client import SopoClient
 from sopo.keys import KeyReader
-from sopo.sources import JogSource
+from sopo.runtime.sources import JogSource
 
 
 def main() -> None:
@@ -56,7 +56,7 @@ def main() -> None:
             pass
     if c.lease:
         c.release()
-    print("\njog client exit (lease released; daemon keeps its mode - `python -m sopo.cli idle` drops torque)")
+    print("\njog client exit (lease released; daemon keeps its mode - `python -m sopo.runtime.cli idle` drops torque)")
 
 
 if __name__ == "__main__":

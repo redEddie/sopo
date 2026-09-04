@@ -228,8 +228,8 @@ class StreamSource:
 #     name = "leader_arm"
 #
 #     def __init__(self, port: str, joints_cfg: list[dict], invert: set[str] = (), offsets: dict[str, int] = None):
-#         from .bus import FeetechBus
-#         from .joints import build_joints
+#         from ..hal.bus import FeetechBus
+#         from ..motion.joints import build_joints
 #         self.bus = FeetechBus(port)
 #         self.joints = build_joints(joints_cfg)      # 리더도 같은 관절 구조(듀얼/연속 포함)라고 가정
 #         self.invert, self.offsets = set(invert), dict(offsets or {})

@@ -22,7 +22,7 @@ import argparse
 
 from sopo import FeetechBus, persist_torque_limit
 from sopo.config import all_motor_ids, load_arm_config, make_joints, make_limits
-from sopo.joints import ContinuousJoint
+from sopo.motion.joints import ContinuousJoint
 
 
 def main() -> None:

@@ -25,19 +25,21 @@ sudo usermod -aG dialout $USER
 ## 구성
 
 ```
-sopo/            핵심 패키지
-  registers.py     STS/SMS 컨트롤 테이블 + sign-magnitude 인코딩
-  bus.py           FeetechBus: ping/scan/read/write/sync_read/sync_write/torque
-  safety.py        SafetyLimits + 토크 제한/과부하 보호/소프트 리밋/스텝 클램핑
-  joints.py        관절 추상화 (single / dual 반전쌍 / 케이블 제한 continuous)
-  reflex.py        호스트 측 충돌 리플렉스 (포화+정체 → 홀드 래칭, recover)
-  control.py       다관절 안전 제어 루프 (클램프 → 명령 → reflex → 홀드/복구)
-  sources.py       명령 소스 경계 (lerobot Teleoperator 구조): WaypointSource/JogSource + 리더 암/정책 플레이스홀더
-  startup.py       자가진단 루틴 (init.py / sopod init)
-  daemon.py        **sopod** — 버스를 독점하는 하위 제어기 데몬 (50Hz 루프 + reflex + 워치독, ZMQ 상태/명령/액션)
-  client.py        SopoClient: 상태 구독 · 명령 · 액션 스트림 (정책/조그/GUI는 이걸로만 접근)
-  cli.py           python -m sopo.cli status|watch|move|idle|guiding|recover|init|goto|shutdown
-  config.py        arm.yaml/calibration.yaml 로더
+sopo/            핵심 패키지 — 층별 서브패키지 구조 (공개 API는 sopo/__init__.py가 재수출)
+  hal/           하드웨어 추상화: registers.py(STS/SMS 컨트롤 테이블 + sign-magnitude 인코딩),
+                 bus.py(FeetechBus: ping/scan/read/write/sync_read/sync_write/torque)
+  motion/        joints.py(관절 추상화: single / dual 반전쌍 / 케이블 제한 continuous),
+                 control.py(다관절 안전 제어 루프: 클램프 → 명령 → reflex → 홀드/복구)
+  safety/        limits.py(SafetyLimits + 토크 제한/과부하 보호/소프트 리밋/스텝 클램핑),
+                 reflex.py(호스트 측 충돌 리플렉스: 포화+정체 → 홀드 래칭, recover)
+  model/         dynamics.py(URDF 기반 중력/외력 토크 GravityModel — 관절↔모터 매핑은 arm.yaml에서 유도)
+  runtime/       daemon.py(**sopod** — 버스를 독점하는 하위 제어기 데몬: 50Hz 루프 + reflex + 워치독, ZMQ 상태/명령/액션),
+                 client.py(SopoClient: 상태 구독 · 명령 · 액션 스트림 — 정책/조그/GUI는 이걸로만 접근),
+                 cli.py(python -m sopo.runtime.cli status|watch|move|idle|guiding|recover|init|goto|shutdown),
+                 startup.py(자가진단 루틴: init.py / sopod init),
+                 sources.py(명령 소스 경계 (lerobot Teleoperator 구조): WaypointSource/JogSource + 리더 암/정책 플레이스홀더)
+  config.py      arm.yaml/calibration.yaml 로더
+  keys.py        터미널 키 입력 (jog)
 cookbook/        Feetech 기초 조작 쿡북 — README.md 참조
                    (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정 → 위치 한계 실측 → 자중 토크 실측)
 examples/
@@ -96,14 +98,14 @@ python cookbook/10_persist_caps.py --config configs/arm.yaml
 
 ```bash
 # 터미널 1: 데몬 (IDLE, 토크 OFF로 시작. 버스는 데몬만 잡는다 — 쿡북 스크립트와 동시 실행 불가)
-sopod --config configs/arm.yaml            # 또는 python -m sopo.daemon
+sopod --config configs/arm.yaml            # 또는 python -m sopo.runtime.daemon
 
 # 터미널 2: 상태 / 명령
-python -m sopo.cli watch                   # 50Hz 상태 스트림 (모드, 관절, 부하, 전압, 지터)
-python -m sopo.cli init                    # 자가진단 → standby_pose, 토크 유지
-python -m sopo.cli goto J4=2300 J6=2500    # 단발 목표 (MOVE 모드에서)
-python -m sopo.cli recover                 # REFLEX 래칭 해제
-python -m sopo.cli idle                    # 토크 OFF
+python -m sopo.runtime.cli watch                   # 50Hz 상태 스트림 (모드, 관절, 부하, 전압, 지터)
+python -m sopo.runtime.cli init                    # 자가진단 → standby_pose, 토크 유지
+python -m sopo.runtime.cli goto J4=2300 J6=2500    # 단발 목표 (MOVE 모드에서)
+python -m sopo.runtime.cli recover                 # REFLEX 래칭 해제
+python -m sopo.runtime.cli idle                    # 토크 OFF
 
 # 터미널 3: 액션 스트림 클라이언트 (정책·조그). 0.5초 끊기면 데몬이 홀드
 python examples/jog_client.py
@@ -112,7 +114,7 @@ python examples/jog_client.py
 파이썬(정책)에서 — Franka의 `control()` 세션에 해당하는 **제어 리스**를 잡아야 액션이 받아들여진다:
 
 ```python
-from sopo.client import SopoClient
+from sopo.runtime.client import SopoClient
 c = SopoClient()
 c.command("move")            # 토크 ON (FCI 활성화에 해당)
 c.acquire("policy")          # 배타적 제어권. 다른 클라이언트가 잡고 있으면 거부

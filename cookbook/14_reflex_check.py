@@ -19,9 +19,9 @@ import time
 
 from sopo import FeetechBus, apply_safety
 from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
-from sopo.control import Blackbox, describe_trip, prompt_recover, read_joints, run_control_loop
-from sopo.reflex import Reflex, ReflexConfig
-from sopo.sources import WaypointSource
+from sopo.motion.control import Blackbox, describe_trip, prompt_recover, read_joints, run_control_loop
+from sopo.safety.reflex import Reflex, ReflexConfig
+from sopo.runtime.sources import WaypointSource
 
 
 class CountingReflex(Reflex):

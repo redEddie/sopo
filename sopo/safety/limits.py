@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from .bus import FeetechBus
+from ..hal.bus import FeetechBus
 
 # Datasheet stall torque at 12V in kg.cm. Torque_Limit is per-mille of the
 # servo's maximum output, which equals this at standstill.

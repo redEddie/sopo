@@ -104,7 +104,7 @@ ROS 패키지 경로(`package://`)를 쓰는 URDF는 이 뷰어에서 메시가 
 
 - 모델: `arm_no_ee.urdf` (6-DOF, joint_6은 continuous)
 - 질량: 팔 링크는 실측 주입 완료 (`link_masses.yaml`), 그리퍼 ee는 추정치
-- `sopo/dynamics.py`: pinocchio로 G(q) 계산 → Present_Load(‰) 예측, 외력 토크 추정
+- `sopo/model/dynamics.py`: pinocchio로 G(q) 계산 → Present_Load(‰) 예측, 외력 토크 추정
 - 검증: `cookbook/17_gravity_check.py` — 자세별로 모터 부하와 모델 예측을 비교
   (최초 1회 `--calibrate-vertical`로 zero 기준 캡처 필요)
 - 다음 단계: G(q)를 제어 루프 피드포워드로 연결 (토크-전류 환산은 06/07 참고)

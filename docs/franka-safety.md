@@ -40,7 +40,7 @@ joint_velocity_limits.h, control_types.h}` (main, 2026-08). Desk/안전 PLC 쪽 
 | # | Franka 메커니즘 | sopo 현재 | 대응 방안 | 우선순위 |
 |---|---|---|---|---|
 | 1 | 외력 추정 τ_ext (모델 기반) | 없음. `Present_Load`(PWM 듀티)·`Present_Current`만 있음 | 모델 대신 **예상 부하 룩업**: 06으로 자세별 정지 부하를 기록 → τ_ext ≈ 실측 − 예상. 1단계는 절대 부하로 시작 | 중 |
-| 2 | 2단 임계값 contact(비래칭)/collision(래칭+reflex) | 없음 | `sopo/reflex.py`: contact = 부하 ≥ 캡 70% → 감속·경고, 자동 해제 / collision = 부하 ≥ 캡 95%가 300 ms 지속 **그리고** 위치 오차가 줄지 않음 → 정지(목표=현재) 래칭, `recover()` 필요. 실측 근거: 무부하 이동 ≤ 캡 85%, 손으로 잡으면 캡 포화 | **높음** |
+| 2 | 2단 임계값 contact(비래칭)/collision(래칭+reflex) | 없음 | `sopo/safety/reflex.py`: contact = 부하 ≥ 캡 70% → 감속·경고, 자동 해제 / collision = 부하 ≥ 캡 95%가 300 ms 지속 **그리고** 위치 오차가 줄지 않음 → 정지(목표=현재) 래칭, `recover()` 필요. 실측 근거: 무부하 이동 ≤ 캡 85%, 손으로 잡으면 캡 포화 | **높음** |
 | 3 | 가속/정속 구간 별도 임계값 | 없음 | 목표가 바뀐 직후 N ms(가속 구간)는 임계값 상향 | 중 |
 | 4 | 추종 오차 한계 (`max_path_pose_deviation`) | 없음 | 목표−실측 오차가 N틱 이상 M ms 지속 → 정지. 충돌 보조 신호 + "모터가 못 따라감"(캡 부족·걸림) 감지. 구현 쉬움 | **높음** |
 | 5 | 시작 자세 불일치 거부 (`start_pose_invalid`) | 부분 — mirror의 소프트스타트 | `SopoRobot.send_action`: 첫 명령이 현재 자세와 임계 이상 다르면 거부 또는 보간 | 높음 |
@@ -59,7 +59,7 @@ joint_velocity_limits.h, control_types.h}` (main, 2026-08). Desk/안전 PLC 쪽 
 
 ## 3. Kimi 구현 순서 제안
 
-1. `sopo/reflex.py` — 공통 감시 모듈: 추종 오차 한계(#4) + 부하 포화 충돌(#2) + 통신/온도(#8, #12). 결과는 래칭 이벤트, `recover()`로 해제. mirror.py의 워치독을 여기로 이전.
+1. `sopo/safety/reflex.py` — 공통 감시 모듈: 추종 오차 한계(#4) + 부하 포화 충돌(#2) + 통신/온도(#8, #12). 결과는 래칭 이벤트, `recover()`로 해제. mirror.py의 워치독을 여기로 이전.
 2. `SopoRobot` 상태 머신(#15)과 시작 자세 검사(#5), 정책 워치독(#8).
 3. 레이트 리미터(#6)와 보간 필터(#7).
 4. 가속 구간 임계값(#3), 예상 부하 룩업(#1).

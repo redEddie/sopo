@@ -2,9 +2,9 @@ import pathlib, sys, tempfile
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import yaml
 from sopo.config import load_arm_config, make_joints, make_joint_limits, make_pairs
-from sopo.sources import WaypointSource
-from sopo.control import clamp_joint_goals
-from sopo.joints import ContinuousJoint
+from sopo.runtime.sources import WaypointSource
+from sopo.motion.control import clamp_joint_goals
+from sopo.motion.joints import ContinuousJoint
 
 JOINTS = [{"name": "J1", "type": "continuous", "motor_id": 1, "range_ticks": 2600},
           {"name": "J2", "type": "dual", "ids": [10, 11], "reference_id": 11, "K": 4005},
@@ -74,7 +74,7 @@ def test_brake_zone_slows_down_near_limits():
 
 
 def test_jog_source_keys_and_lead_limit():
-    from sopo.sources import JogSource
+    from sopo.runtime.sources import JogSource
     keys = []
     src = JogSource(["J4", "J6"], lambda: keys.pop(0) if keys else [], step=40, lead=200)
     present = {"J4": 2000, "J6": 2000}
@@ -91,7 +91,7 @@ def test_jog_source_keys_and_lead_limit():
 
 
 def test_verify_eprom_reports_drift():
-    from sopo.safety import SafetyLimits, verify_eprom
+    from sopo.safety.limits import SafetyLimits, verify_eprom
     class FakeBus:
         regs = {(19, "Max_Torque_Limit"): 1000, (19, "Min_Position_Limit"): 0, (19, "Max_Position_Limit"): 4095,
                 (21, "Max_Torque_Limit"): 150}
@@ -103,7 +103,7 @@ def test_verify_eprom_reports_drift():
 
 
 def test_continuous_home_abs_picks_nearest_turn():
-    from sopo.joints import ContinuousJoint
+    from sopo.motion.joints import ContinuousJoint
     class B:
         def __init__(self, v): self.v = v
         def read(self, reg, mid): return self.v
@@ -116,7 +116,7 @@ def test_continuous_home_abs_picks_nearest_turn():
 
 def test_reflex_joint_limit_for_continuous_range():
     from sopo import SafetyLimits
-    from sopo.reflex import Reflex, ReflexConfig, Event, Mode
+    from sopo.safety.reflex import Reflex, ReflexConfig, Event, Mode
     r = Reflex(SafetyLimits(torque_limits={1: 200}), {}, ReflexConfig(limit_margin=30, t_limit=0.5))
     r.set_limit(1, 0, 4096)
     r.update(now=0.0, present={1: 2048}, goal={1: 2048}, load={1: 0})           # 안에서 시작 → 무장
@@ -127,7 +127,7 @@ def test_reflex_joint_limit_for_continuous_range():
 
 
 def test_stream_source_stale_hold_is_latched_not_tracking():
-    from sopo.sources import StreamSource
+    from sopo.runtime.sources import StreamSource
     s = StreamSource(watchdog_s=0.5)
     s.push({"J4": 2300}, 0.0)
     assert s.get_action({"J4": 2100}, 0.1) == {"J4": 2300}
@@ -138,8 +138,8 @@ def test_stream_source_stale_hold_is_latched_not_tracking():
 def test_build_joint_map_from_repo_arm_yaml():
     """configs/arm.yaml에서 매핑 유도: J2 듀얼 합산 스톨/ids/mount_sign 확인."""
     import pytest
-    from sopo.dynamics import build_joint_map
-    from sopo.safety import KGCM_TO_NM, MODEL_STALL_TORQUE_KGCM
+    from sopo.model.dynamics import build_joint_map
+    from sopo.safety.limits import KGCM_TO_NM, MODEL_STALL_TORQUE_KGCM
     root = pathlib.Path(__file__).resolve().parents[1]
     joints = yaml.safe_load((root / "configs" / "arm.yaml").read_text())["joints"]
     jm = build_joint_map(joints, MODEL_STALL_TORQUE_KGCM)

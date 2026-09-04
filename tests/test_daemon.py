@@ -2,8 +2,8 @@
 import pathlib, sys, threading, time
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import pytest
-import sopo.daemon as daemon_mod
-from sopo.sources import StreamSource
+import sopo.runtime.daemon as daemon_mod
+from sopo.runtime.sources import StreamSource
 
 CFG = {
     "arm": {"port": "/dev/fake"},
@@ -87,7 +87,7 @@ def running_daemon(monkeypatch):
     t = threading.Thread(target=d.start, daemon=True)
     t.start()
     time.sleep(0.5)
-    from sopo.client import SopoClient
+    from sopo.runtime.client import SopoClient
     c = SopoClient("127.0.0.1", ports)
     yield d, c
     try:
@@ -155,7 +155,7 @@ def test_reflex_latch_requires_explicit_recover(running_daemon):
 
 def test_lease_is_exclusive_and_revoked_on_reflex(running_daemon):
     d, c = running_daemon
-    from sopo.client import SopoClient
+    from sopo.runtime.client import SopoClient
     c2 = SopoClient("127.0.0.1", {"state": 6555, "cmd": 6556, "action": 6557})
     assert c.command("move")["ok"] and c.acquire("policy")["ok"]
     assert c2.acquire("jog")["ok"] is False                       # exclusive
@@ -185,7 +185,7 @@ def test_daemon_exit_holds_torque(monkeypatch):
     ports = {"state": 6565, "cmd": 6566, "action": 6567}
     d = daemon_mod.Daemon(CFG, ports)
     t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
-    from sopo.client import SopoClient
+    from sopo.runtime.client import SopoClient
     c = SopoClient("127.0.0.1", ports)
     assert c.command("move")["ok"]
     c.command("shutdown"); t.join(timeout=3)
@@ -201,7 +201,7 @@ def test_daemon_adopts_held_arm_at_start(monkeypatch):
     ports = {"state": 6575, "cmd": 6576, "action": 6577}
     d = daemon_mod.Daemon(CFG, ports)
     t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
-    from sopo.client import SopoClient
+    from sopo.runtime.client import SopoClient
     c = SopoClient("127.0.0.1", ports)
     s = c.state(1.0)
     assert s["mode"] == "reflex" and d.bus.torque[19] == 1        # not dropped

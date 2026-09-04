@@ -92,8 +92,8 @@ Feetech 쪽 스캔은 기존 `cookbook/00_scan.py` 사용.
 
 ## 향후 도입 시 작업 후보
 
-1. `sopo/bus.py`의 FeetechBus에 대응하는 DynamixelBus (Protocol 2.0, 제어 테이블 주소 맵 신규).
+1. `sopo/hal/bus.py`의 FeetechBus에 대응하는 DynamixelBus (Protocol 2.0, 제어 테이블 주소 맵 신규).
    SDK는 `pip install dynamixel-sdk` 또는 위 스캔 코드처럼 raw 패킷 직접 구성.
-2. `sopo/safety.py`의 `MODEL_STALL_TORQUE_KGCM`에 xl430 추가 시 주의: XL430은 토크 리밋이
+2. `sopo/safety/limits.py`의 `MODEL_STALL_TORQUE_KGCM`에 xl430 추가 시 주의: XL430은 토크 리밋이
    아니라 PWM 리밋 방식 (주소 36 PWM_Limit, 0~885).
 3. `configs/arm.yaml`에 포트를 버스별로 분리하는 설정 확장 필요 (현재 단일 `baudrate`/포트 구조).

@@ -31,7 +31,7 @@ import yaml
 
 from sopo import FeetechBus, SafetyLimits, apply_safety
 from sopo.config import load_arm_config, load_gravity_cal, make_gravity_model, make_joints
-from sopo.joints import DualMotorJoint
+from sopo.motion.joints import DualMotorJoint
 
 
 def save_zero_ticks(path: Path, zero_ticks: dict, dirs: dict) -> None:

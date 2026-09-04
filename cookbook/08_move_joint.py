@@ -33,7 +33,7 @@ from sopo import (
 
 
 from sopo.config import load_arm_config as load_config
-from sopo.control import describe_trip, end_session  # arm:/구 leader·follower 스키마 모두 지원
+from sopo.motion.control import describe_trip, end_session  # arm:/구 leader·follower 스키마 모두 지원
 
 
 def build_joint(cfg: dict, joint_name: str):

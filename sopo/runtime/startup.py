@@ -9,10 +9,10 @@ from __future__ import annotations
 import sys
 import time
 
-from .bus import FeetechBus
-from .control import command_joints, read_joints
-from .joints import ContinuousJoint, DualMotorJoint, Joint
-from .safety import SafetyLimits
+from ..hal.bus import FeetechBus
+from ..motion.control import command_joints, read_joints
+from ..motion.joints import ContinuousJoint, DualMotorJoint, Joint
+from ..safety.limits import SafetyLimits
 
 TEST_TICKS = 40      # 자가진단 이동량 (약 3.5 deg). 목표를 한 번에 준다: 오차가 작으면 P제어 출력이 작아
                      # (오차 10틱 ~ 80‰) 무거운 관절이 움직이지 못한다.

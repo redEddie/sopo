@@ -12,7 +12,7 @@ import math
 from typing import Protocol
 
 
-from .bus import FeetechBus
+from ..hal.bus import FeetechBus
 
 TICKS_PER_REV = 4096
 MAX_SINGLE_MOVE = TICKS_PER_REV // 2  # half a turn: last-resort guard for continuous joints

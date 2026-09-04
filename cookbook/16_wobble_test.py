@@ -21,10 +21,10 @@ import statistics as st
 
 from sopo import FeetechBus, apply_safety
 from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
-from sopo.control import Blackbox, read_joints, run_control_loop
-from sopo.joints import DualMotorJoint
-from sopo.reflex import Reflex, ReflexConfig
-from sopo.sources import WaypointSource
+from sopo.motion.control import Blackbox, read_joints, run_control_loop
+from sopo.motion.joints import DualMotorJoint
+from sopo.safety.reflex import Reflex, ReflexConfig
+from sopo.runtime.sources import WaypointSource
 
 SETTLE_WIN = 1.0
 SETTLE_TOL = 6

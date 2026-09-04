@@ -1,4 +1,4 @@
-"""sopo CLI: python -m sopo.cli <status|watch|move|idle|guiding|recover|init|goto|shutdown>"""
+"""sopo CLI: python -m sopo.runtime.cli <status|watch|move|idle|guiding|recover|init|goto|shutdown>"""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def main() -> None:
             if not s:
                 continue
             if s["mode"] == "reflex":
-                print(f"\nREFLEX after {time.monotonic() - t0:.1f}s: {s['trips'][-1] if s['trips'] else ''}\n-> `python -m sopo.cli recover`"); sys.exit(2)
+                print(f"\nREFLEX after {time.monotonic() - t0:.1f}s: {s['trips'][-1] if s['trips'] else ''}\n-> `python -m sopo.runtime.cli recover`"); sys.exit(2)
             if s["mode"] != "move":
                 print(f"\nmode changed to {s['mode']}"); sys.exit(2)
             err = {n: s["joints"][n]["pos"] - v for n, v in target.items() if s["joints"][n]["pos"] is not None}

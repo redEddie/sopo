@@ -20,13 +20,13 @@ from enum import Enum
 
 import zmq
 
-from .bus import FeetechBus
-from .config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
-from .control import (ARRIVAL_TICKS, SOFT_START_STEP, Blackbox, clamp_joint_goals, command_joints, describe_trip,
-                      hold_joint_goals, motor_goals, read_joints, reflex_present_view)
-from .joints import ContinuousJoint, DualMotorJoint
-from .reflex import Mode as ReflexMode, Reflex, ReflexConfig
-from .safety import apply_safety, freeze, verify_eprom
+from ..hal.bus import FeetechBus
+from ..config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
+from ..motion.control import (ARRIVAL_TICKS, SOFT_START_STEP, Blackbox, clamp_joint_goals, command_joints, describe_trip,
+                              hold_joint_goals, motor_goals, read_joints, reflex_present_view)
+from ..motion.joints import ContinuousJoint, DualMotorJoint
+from ..safety.reflex import Mode as ReflexMode, Reflex, ReflexConfig
+from ..safety.limits import apply_safety, freeze, verify_eprom
 from .sources import StreamSource
 from .startup import self_test
 

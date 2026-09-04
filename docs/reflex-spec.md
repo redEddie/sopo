@@ -1,4 +1,4 @@
-# sopo/reflex.py 설계 스펙 (Franka 충돌 리플렉스의 sopo판)
+# sopo/safety/reflex.py 설계 스펙 (Franka 충돌 리플렉스의 sopo판)
 
 배경: `docs/franka-safety.md` 2절 #2, #4, #5, #8, #12, #15. 실측 근거는 07 실험 —
 무부하 이동 시 max load 124~128‰(캡 150의 85%), 손으로 잡으면 150‰에 포화된 채 1.8~3.75초 지속.

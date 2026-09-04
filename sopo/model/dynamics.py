@@ -18,7 +18,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .safety import KGCM_TO_NM
+from ..safety.limits import KGCM_TO_NM
 
 TICKS_PER_REV = 4096
 
@@ -56,11 +56,11 @@ _FALLBACK_JOINT_MAP = {
 
 def _default_joint_map() -> dict:
     """configs/arm.yaml에서 기본 매핑을 유도한다. 읽기 실패 시 하드코딩 값으로 평백."""
-    arm_path = Path(__file__).resolve().parents[1] / "configs" / "arm.yaml"
+    arm_path = Path(__file__).resolve().parents[2] / "configs" / "arm.yaml"
     try:
         import yaml
 
-        from .safety import MODEL_STALL_TORQUE_KGCM
+        from ..safety.limits import MODEL_STALL_TORQUE_KGCM
 
         joints = yaml.safe_load(arm_path.read_text())["joints"]
         return build_joint_map(joints, MODEL_STALL_TORQUE_KGCM)
@@ -70,7 +70,7 @@ def _default_joint_map() -> dict:
 
 JOINT_MAP = _default_joint_map()
 
-DEFAULT_URDF = Path(__file__).resolve().parents[1] / "description" / "arm_no_ee.urdf"
+DEFAULT_URDF = Path(__file__).resolve().parents[2] / "description" / "arm_no_ee.urdf"
 
 
 def ticks_to_rad(ticks: float, zero_ticks: float, direction: int = 1) -> float:

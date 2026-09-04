@@ -17,10 +17,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from sopo import FeetechBus, apply_safety
 from sopo.config import all_motor_ids, load_arm_config, make_joint_limits, make_joints, make_limits, make_pairs
-from sopo.control import end_session, Blackbox, run_control_loop
-from sopo.reflex import Reflex, ReflexConfig
-from sopo.safety import verify_eprom
-from sopo.sources import WaypointSource
+from sopo.motion.control import end_session, Blackbox, run_control_loop
+from sopo.safety.reflex import Reflex, ReflexConfig
+from sopo.safety.limits import verify_eprom
+from sopo.runtime.sources import WaypointSource
 
 
 def main() -> None:

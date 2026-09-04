@@ -1,16 +1,21 @@
-"""sopo: controller for our mid-size Feetech-based arm (hopejr-derived)."""
+"""sopo: controller for our mid-size Feetech-based arm (hopejr-derived).
 
-from .bus import FeetechBus
-from .dynamics import GravityCal, GravityModel
-from .joints import (
+공개 API는 여기서 재수출한다. 실제 구현은 층별 서브패키지에 있다:
+hal(버스/레지스터) → motion(관절/제어 루프) → safety(제한/리플렉스) →
+model(중력 모델) → runtime(데몬/클ライ언트/CLI). 설정 로더(config)와 키 입력(keys)은 루트 유지.
+"""
+
+from .hal.bus import FeetechBus
+from .model.dynamics import GravityCal, GravityModel
+from .motion.joints import (
     ContinuousJoint,
     DualMotorJoint,
     Joint,
     SingleMotorJoint,
     build_joints,
 )
-from .reflex import Event, Mode, Reflex, ReflexConfig, Trip
-from .safety import (
+from .safety.reflex import Event, Mode, Reflex, ReflexConfig, Trip
+from .safety.limits import (
     MODEL_STALL_TORQUE_KGCM,
     SafetyLimits,
     apply_safety,

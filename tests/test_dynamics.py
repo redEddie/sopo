@@ -7,7 +7,7 @@ import pytest
 
 pin = pytest.importorskip("pinocchio", reason="pinocchio 미설치 (pip install pin)")
 
-from sopo.dynamics import JOINT_MAP, GravityModel, ticks_to_rad
+from sopo.model.dynamics import JOINT_MAP, GravityModel, ticks_to_rad
 
 
 @pytest.fixture(scope="module")
