@@ -128,7 +128,7 @@ class Reflex:
 7. comm_ok=False 5회: STOPPED. temps {19: 71}: STOPPED. {19: 66}: warnings만.
 8. recover: load 높으면 False, 낮고 오차 작으면 True → MOVE.
 
-## 8. 하드웨어 튜닝 절차 (Kimi가 실행 후 TODO.md에 수치 기록)
+## 8. 하드웨어 튜닝 절차 (실행 후 수치는 calibration.yaml과 관련 이슈에 기록)
 
 1. `cookbook/1_setup/140_move_joint.py --joint J4 --torque-limit 150` 왕복 10회: 오탐 0이어야 함. 오탐 나면 sat_ratio↑ 또는 t_accel↑.
 2. 같은 조건에서 손으로 잡기: 0.3~0.6 s 안에 COLLISION, 홀드 후 손을 놓아도 움직이지 않음, `r`로 복구.
