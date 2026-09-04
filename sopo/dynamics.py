@@ -7,18 +7,44 @@ description/arm_no_ee.urdf (6-DOF, joint_1~6)를 pinocchio로 읽어 현재 자�
     예측 Present_Load[‰] ≈ G(q) / stall × 1000
     외력 토크[N·m]     ≈ measured‰ × stall / 1000 − G(q)
 
-듀얼 모터 관절(J2/J3)은 스톨을 합산한다. per-motor 예측은 합산 ‰와 동일
+듀얼 모터 관절(J2/J3)은 스톨을 합산하고, 관절 토크 기여는 mount_sign으로 부호를
+맞춘 모터별 부하의 합이다. per-motor 예측 ‰는 합산 ‰와 동일
 (토크를 반씩 나눠 지므로 각 모터도 stall의 같은 비율로 일한다고 가정).
+
+관절↔URDF↔모터 매핑의 단일 진실 공급원은 configs/arm.yaml이다 (build_joint_map).
 """
 
 import math
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from .safety import KGCM_TO_NM
 
 TICKS_PER_REV = 4096
 
-# sopo 관절 ↔ URDF 관절 ↔ 스톨 토크 [N·m @12V].
+
+def build_joint_map(joints: list[dict], stall_table: dict[str, float]) -> dict:
+    """arm.yaml joints 목록에서 관절↔URDF↔모터 매핑을 유도한다 (순수 함수).
+
+    joints 목록의 순서가 URDF 조인트 번호가 된다 (첫 관절 → joint_1).
+    stall_table은 모델별 스톨 토크 [kg·cm] (safety.MODEL_STALL_TORQUE_KGCM).
+    결과: {name: {"urdf", "stall" [N·m, 모터 수 합산], "ids", "mount_sign"}}.
+    """
+    out = {}
+    for idx, j in enumerate(joints):
+        ids = list(j["ids"]) if j["type"] == "dual" else [j["motor_id"]]
+        out[j["name"]] = {
+            "urdf": f"joint_{idx + 1}",
+            "stall": stall_table[j["model"]] * KGCM_TO_NM * len(ids),
+            "ids": ids,
+            "mount_sign": list(j.get("mount_sign", [1] * len(ids))),
+        }
+    return out
+
+
+# arm.yaml을 읽지 못할 때 쓰는 평백: sopo 관절 ↔ URDF 관절 ↔ 스톨 토크 [N·m @12V].
 # effort가 아니라 스톨 기준: Present_Load(‰)가 스톨 대비 듀티 비율이기 때문.
-JOINT_MAP = {
+_FALLBACK_JOINT_MAP = {
     "J1": {"urdf": "joint_1", "stall": 8.34},  # SM8512BL — 수직축이라 G(q)≈0
     "J2": {"urdf": "joint_2", "stall": 9.81},  # STS3250 x2 (듀얼 합산)
     "J3": {"urdf": "joint_3", "stall": 9.81},  # STS3250 x2
@@ -27,12 +53,42 @@ JOINT_MAP = {
     "J6": {"urdf": "joint_6", "stall": 2.94},  # STS3215 12V
 }
 
+
+def _default_joint_map() -> dict:
+    """configs/arm.yaml에서 기본 매핑을 유도한다. 읽기 실패 시 하드코딩 값으로 평백."""
+    arm_path = Path(__file__).resolve().parents[1] / "configs" / "arm.yaml"
+    try:
+        import yaml
+
+        from .safety import MODEL_STALL_TORQUE_KGCM
+
+        joints = yaml.safe_load(arm_path.read_text())["joints"]
+        return build_joint_map(joints, MODEL_STALL_TORQUE_KGCM)
+    except Exception:
+        return {name: dict(spec) for name, spec in _FALLBACK_JOINT_MAP.items()}
+
+
+JOINT_MAP = _default_joint_map()
+
 DEFAULT_URDF = Path(__file__).resolve().parents[1] / "description" / "arm_no_ee.urdf"
 
 
 def ticks_to_rad(ticks: float, zero_ticks: float, direction: int = 1) -> float:
     """모터 틱을 URDF 각도로. zero_ticks는 URDF q=0(수직 직립) 자세의 틱."""
     return direction * (ticks - zero_ticks) * (2 * math.pi / TICKS_PER_REV)
+
+
+@dataclass
+class GravityCal:
+    """calibration.yaml gravity 섹션: URDF zero 기준 틱, 조인트 방향, ‰↔토크 스케일."""
+
+    zero_ticks: dict[str, float] = field(default_factory=dict)
+    dir: dict[str, int] = field(default_factory=dict)
+    scale: dict[str, float] = field(default_factory=dict)
+
+    def q(self, joint_name: str, ticks: float) -> float:
+        """모터 틱 → URDF 각도 [rad]. dir이 없으면 +1."""
+        return ticks_to_rad(ticks, self.zero_ticks[joint_name], self.dir.get(joint_name, 1))
 
 
 class GravityModel:
@@ -116,3 +172,38 @@ class GravityModel:
             / (1000 * scale.get(n, 1.0)) - g[n]
             for n in g
         }
+
+    def measured_torque_nm(self, loads_by_motor: dict[int, float]) -> dict[str, float]:
+        """모터별 Present_Load [‰] → 관절별 측정 토크 [N·m] (정지/저속 가정).
+
+        single: load[id] × stall / 1000.
+        dual:   Σ sign_i × load[id_i] × (stall/2) / 1000 — 미러는 반전 장착이라
+                mount_sign으로 부호를 맞춰 합산한다 (stall은 관절 합산 기준).
+        joint_map에 ids가 없으면(구형 평백 맵) 0, mount_sign이 없으면
+        reference 방식(첫 모터 값 × stall)으로 평백한다.
+        """
+        out = {}
+        for name, spec in self.joint_map.items():
+            ids = spec.get("ids") or []
+            signs = spec.get("mount_sign")
+            if not ids:
+                out[name] = 0.0
+            elif signs is None:
+                out[name] = loads_by_motor.get(ids[0], 0.0) * spec["stall"] / 1000
+            else:
+                per_motor = spec["stall"] / len(ids)
+                out[name] = sum(sg * loads_by_motor.get(i, 0.0)
+                                for i, sg in zip(ids, signs)) * per_motor / 1000
+        return out
+
+    def external_torque_from_loads(self, q_rad: dict[str, float],
+                                   loads_by_motor: dict[int, float],
+                                   scale: dict[str, float] | None = None) -> dict[str, float]:
+        """모터 부하로부터 외력 토크 [N·m] = 측정 토크 − 중력 토크 (정지/저속 가정).
+
+        scale을 넣으면 측정 토크를 실제 토크로 환산할 때 그 계수로 나눈다.
+        """
+        g = self.gravity(q_rad)
+        scale = scale or {}
+        meas = self.measured_torque_nm(loads_by_motor)
+        return {n: meas[n] / scale.get(n, 1.0) - g[n] for n in g}

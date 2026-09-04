@@ -1,6 +1,7 @@
 """sopo: controller for our mid-size Feetech-based arm (hopejr-derived)."""
 
 from .bus import FeetechBus
+from .dynamics import GravityCal, GravityModel
 from .joints import (
     ContinuousJoint,
     DualMotorJoint,
@@ -37,6 +38,8 @@ __all__ = [
     "MODEL_STALL_TORQUE_KGCM",
     "torque_limit_from_kgcm",
     "torque_limit_to_kgcm",
+    "GravityModel",
+    "GravityCal",
     "Mode",
     "Event",
     "ReflexConfig",

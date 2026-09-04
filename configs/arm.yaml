@@ -12,10 +12,15 @@ arm:
 # continuous: 스토퍼 없이 전선이 회전을 제한하는 관절 (J1). 시작 자세 ± range_ticks로
 #             목표를 잘라낸다(오류 아님). 전선이 풀린 자세에서 프로그램을 시작할 것.
 #             range_ticks는 cookbook/09_continuous_angle.py로 잰다.
+# model: 모터 모델 (sopo/safety.py MODEL_STALL_TORQUE_KGCM 키). 중력/부하 해석의
+#        스톨 토크 산출에 쓴다 (sopo/dynamics.py build_joint_map).
+# mount_sign: 듀얼 관절의 모터별 장착 부호 (ids 순서와 대응). 반전 장착이라
+#             관절 토크 기여 = Σ sign_i × load_i. 실기 검증으로 확정됨.
 joints:
   - name: J1
     type: continuous
     motor_id: 1
+    model: sm8512bl
     range_ticks: 2000          # +-176 deg around home (silent clamp, brake zone from 158 deg). < 2048 so 'nearest 2048' never flips a turn on restart
     firmware_multiturn: true   # Phase bit4 ON + Min/Max_Position_Limit 0/0: servo counts turns itself
     home_abs: 2048             # cable-relaxed pose reads 2048 (cookbook/09 --center); home = nearest copy of it
@@ -24,25 +29,32 @@ joints:
     ids: [10, 11]
     reference_id: 11
     K: 4005
+    model: sts3250
+    mount_sign: [1, -1]        # ID 10 정장착, ID 11 반전 장착
     preload_ticks: 4           # anti-backlash: try 4 (mirror pushes 4 ticks against the reference)
   - name: J3
     type: dual
     ids: [15, 16]
     reference_id: 16
     K: 4100
+    model: sts3250
+    mount_sign: [1, -1]        # ID 15 정장착, ID 16 반전 장착
     preload_ticks: 4
   - name: J4
     type: continuous           # 360 deg roll, cable-limited like J1. setup: cookbook/12_continuous_setup.py --id 19 --center
     motor_id: 19
+    model: sts3250
     range_ticks: 2000
     firmware_multiturn: true
     home_abs: 2048
   - name: J5
     type: single
     motor_id: 20
+    model: sts3215
   - name: J6
     type: single               # placeholder: no end-effector yet (joint is free), limits will be measured once the EE is mounted
     motor_id: 21
+    model: sts3215
 
 safety:
   # 정격(스톨) 토크 대비 천분율. 300 = 30%. 사람 근처에서는 400을 넘기지 말 것.

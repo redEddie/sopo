@@ -5,6 +5,8 @@
     joints: [...]            # sopo.joints.build_joints 형식
     safety: {...}            # SafetyLimits 필드
 구 스키마(leader/follower 섹션)는 경고와 함께 읽어준다.
+
+중력 보정(calibration.yaml의 gravity 섹션)은 load_gravity_cal / make_gravity_model이 담당한다.
 """
 
 from __future__ import annotations
@@ -14,8 +16,9 @@ from pathlib import Path
 
 import yaml
 
+from .dynamics import DEFAULT_URDF, GravityCal, GravityModel, build_joint_map
 from .joints import ContinuousJoint, DualMotorJoint, Joint, build_joints
-from .safety import SafetyLimits
+from .safety import MODEL_STALL_TORQUE_KGCM, SafetyLimits
 
 DEFAULT_BAUDRATE = 1_000_000
 
@@ -92,3 +95,23 @@ def make_pairs(cfg: dict) -> dict[str, tuple[int, int, int]]:
 
 def all_motor_ids(joints: list[Joint]) -> list[int]:
     return [mid for j in joints for mid in j.motor_ids]
+
+
+def load_gravity_cal(calibration_path: str | Path) -> GravityCal:
+    """calibration.yaml의 gravity 섹션 → GravityCal (섹션/파일이 없으면 dir=1, scale={} 기본값)."""
+    path = Path(calibration_path)
+    data = yaml.safe_load(path.read_text()) if path.exists() else {}
+    grav = (data or {}).get("gravity") or {}
+    return GravityCal(
+        zero_ticks=grav.get("zero_ticks") or {},
+        dir=grav.get("dir") or {},
+        scale=grav.get("scale") or {},
+    )
+
+
+def make_gravity_model(arm_config_path: str | Path = "configs/arm.yaml",
+                       urdf_path: str | Path | None = None) -> GravityModel:
+    """arm.yaml joints + 스톨 테이블로 joint_map을 유도한 GravityModel을 만든다."""
+    cfg = yaml.safe_load(Path(arm_config_path).read_text()) or {}
+    joint_map = build_joint_map(cfg["joints"], MODEL_STALL_TORQUE_KGCM)
+    return GravityModel(urdf_path or DEFAULT_URDF, joint_map)

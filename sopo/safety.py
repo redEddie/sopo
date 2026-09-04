@@ -20,7 +20,13 @@ MODEL_STALL_TORQUE_KGCM = {
     "sts3250": 50.0,
     "sm8512bl": 85.0,
 }
+KGCM_TO_NM = 0.0980665  # kg·cm → N·m 변환은 이 상수 한 곳에서만
 CURRENT_UNIT_MA = 6.5  # Present_Current / Protection_Current register unit
+
+
+def stall_nm(model: str, count: int = 1) -> float:
+    """모델의 스톨 토크 [N·m @12V]. count는 관절의 모터 수 (듀얼이면 2, 합산)."""
+    return MODEL_STALL_TORQUE_KGCM[model] * KGCM_TO_NM * count
 
 
 def torque_limit_from_kgcm(model: str, kgcm: float) -> int:

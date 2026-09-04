@@ -106,3 +106,44 @@ def test_scale_applied(gm):
     ext = gm.external_torque(pose, measured, {"J2": 0.5})
     # J2 측정값이 절반 스케일이면 실제 토크는 2배로 환산 → 외력 = +G
     assert ext["J2"] == pytest.approx(g["J2"], rel=1e-6)
+
+
+def test_measured_torque_nm_dual_sign(gm):
+    """듀얼은 mount_sign으로 부호를 맞춘 모터별 기여의 합 (stall은 관절 합산 기준)."""
+    stall = JOINT_MAP["J2"]["stall"]
+    loads = {10: -128.0, 11: 96.0}
+    meas = gm.measured_torque_nm(loads)
+    assert meas["J2"] == pytest.approx((1 * -128 + -1 * 96) * (stall / 2) / 1000)
+    # single은 해당 모터 값 × stall / 1000 (없는 모터는 0)
+    assert meas["J5"] == pytest.approx(0.0)
+    loads[20] = 100.0
+    meas = gm.measured_torque_nm(loads)
+    assert meas["J5"] == pytest.approx(100 * JOINT_MAP["J5"]["stall"] / 1000)
+
+
+def test_external_torque_from_loads(gm):
+    """측정 부하가 중력과 정확히 맞으면 외력 0 (듀얼은 부호 맞춰 균등 분담)."""
+    pose = q(J2=math.pi / 2, J3=-0.3)
+    g = gm.gravity(pose)
+    loads = {}
+    for n, spec in JOINT_MAP.items():
+        m = g[n] * 1000 / spec["stall"]
+        for i, s in zip(spec["ids"], spec["mount_sign"]):
+            loads[i] = s * m
+    ext = gm.external_torque_from_loads(pose, loads)
+    for n in ext:
+        assert ext[n] == pytest.approx(0.0, abs=1e-9)
+    # J2에 절반 스케일을 주면 측정 토크를 2배로 환산 → 외력 = +G
+    ext = gm.external_torque_from_loads(pose, loads, {"J2": 0.5})
+    assert ext["J2"] == pytest.approx(g["J2"], rel=1e-6)
+
+
+def test_make_gravity_model_matches_joint_map():
+    """config 로더가 만든 모델의 매핑이 모듈 JOINT_MAP(arm.yaml 유도)과 일치한다."""
+    from sopo.config import make_gravity_model
+    arm = Path(__file__).resolve().parents[1] / "configs" / "arm.yaml"
+    gm2 = make_gravity_model(arm)
+    for n, spec in JOINT_MAP.items():
+        assert gm2.joint_map[n]["stall"] == pytest.approx(spec["stall"])
+        assert gm2.joint_map[n]["ids"] == spec["ids"]
+        assert gm2.joint_map[n]["mount_sign"] == spec["mount_sign"]

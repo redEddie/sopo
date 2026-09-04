@@ -134,3 +134,43 @@ def test_stream_source_stale_hold_is_latched_not_tracking():
     assert s.get_action({"J4": 2250}, 1.0) == {"J4": 2250}   # stale: latch the position at that moment
     assert s.get_action({"J4": 2400}, 1.5) == {"J4": 2250}   # pushed by hand: goal stays -> arm resists
 
+
+def test_build_joint_map_from_repo_arm_yaml():
+    """configs/arm.yaml에서 매핑 유도: J2 듀얼 합산 스톨/ids/mount_sign 확인."""
+    import pytest
+    from sopo.dynamics import build_joint_map
+    from sopo.safety import KGCM_TO_NM, MODEL_STALL_TORQUE_KGCM
+    root = pathlib.Path(__file__).resolve().parents[1]
+    joints = yaml.safe_load((root / "configs" / "arm.yaml").read_text())["joints"]
+    jm = build_joint_map(joints, MODEL_STALL_TORQUE_KGCM)
+    assert list(jm) == ["J1", "J2", "J3", "J4", "J5", "J6"]  # 목록 순서 = joint_1..6
+    j2 = jm["J2"]
+    assert j2["urdf"] == "joint_2" and jm["J1"]["urdf"] == "joint_1"
+    assert j2["ids"] == [10, 11] and j2["mount_sign"] == [1, -1]
+    assert j2["stall"] == pytest.approx(9.81, abs=0.01)
+    assert j2["stall"] == pytest.approx(50 * KGCM_TO_NM * 2)  # sts3250 듀얼 합산
+    assert jm["J3"]["ids"] == [15, 16] and jm["J3"]["mount_sign"] == [1, -1]
+    # single/continuous는 ids 1개, mount_sign [1]
+    assert jm["J1"]["ids"] == [1] and jm["J1"]["mount_sign"] == [1]
+    assert jm["J5"]["stall"] == pytest.approx(30 * KGCM_TO_NM)  # sts3215
+
+
+def test_load_gravity_cal_tmp_yaml():
+    """calibration.yaml gravity 섹션 로드: zero/dir/scale + 파일 없으면 기본값."""
+    import math
+    import pytest
+    from sopo.config import load_gravity_cal
+    d = pathlib.Path(tempfile.mkdtemp())
+    p = d / "calibration.yaml"
+    p.write_text(yaml.safe_dump({"gravity": {"zero_ticks": {"J2": 2012}, "dir": {"J2": -1},
+                                             "scale": {"J2": 0.29}}}))
+    cal = load_gravity_cal(p)
+    assert cal.zero_ticks == {"J2": 2012}
+    assert cal.dir == {"J2": -1}
+    assert cal.scale == {"J2": 0.29}
+    assert cal.q("J2", 2012) == 0.0
+    assert cal.q("J2", 2012 + 2048) == pytest.approx(-math.pi)  # dir -1 반영
+    # 파일/섹션이 없으면 기본값 (dir은 q()에서 +1 취급)
+    empty = load_gravity_cal(d / "nonexistent.yaml")
+    assert empty.zero_ticks == {} and empty.dir == {} and empty.scale == {}
+
