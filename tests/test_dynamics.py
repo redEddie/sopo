@@ -167,3 +167,15 @@ def test_rnea_moving_differs_from_gravity(gm):
     g = gm.gravity(pose)
     assert abs(r["J3"] - g["J3"]) > 0.05                      # 코리올리 항이 J3를 움직임
     assert r["J2"] == pytest.approx(g["J2"], abs=1e-6)        # J2 축 자체는 중력 그대로
+
+
+def test_gravitycal_ticks_roundtrip():
+    from sopo.model.dynamics import GravityCal
+    cal = GravityCal(zero_ticks={"J2": 2012}, dir={"J2": 1}, scale={})
+    assert cal.ticks("J2", 0.0) == 2012
+    assert cal.ticks("J2", 90.0) == 2012 + 1024
+    assert cal.ticks("J2", -90.0) == 2012 - 1024
+    # dir=-1이면 부호 반전, q()와의 왕복 일치
+    cal_neg = GravityCal(zero_ticks={"J2": 2012}, dir={"J2": -1}, scale={})
+    assert cal_neg.ticks("J2", 90.0) == 2012 - 1024
+    assert math.degrees(cal_neg.q("J2", cal_neg.ticks("J2", 33.0))) == pytest.approx(33.0, abs=0.1)  # 틱 해상도 0.088도

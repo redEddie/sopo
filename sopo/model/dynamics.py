@@ -90,6 +90,11 @@ class GravityCal:
         """모터 틱 → URDF 각도 [rad]. dir이 없으면 +1."""
         return ticks_to_rad(ticks, self.zero_ticks[joint_name], self.dir.get(joint_name, 1))
 
+    def ticks(self, joint_name: str, deg: float) -> int:
+        """URDF 각도 [deg, REP-103 규약] → 모터 틱. q()의 역변환."""
+        return round(self.zero_ticks[joint_name]
+                     + self.dir.get(joint_name, 1) * math.radians(deg) / (2 * math.pi / TICKS_PER_REV))
+
 
 class GravityModel:
     """pinocchio 래퍼. 스레드 안전하지 않으므로 제어 루프와 분리해 쓸 것."""

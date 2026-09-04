@@ -73,6 +73,14 @@ class Daemon:
         self.ext: dict[str, float] = {}     # 관절별 외력 토크 [N·m] (estimator 없으면 빈 dict)
         self._ref_ids = {j.name: (j.reference_id if isinstance(j, DualMotorJoint) else j.motor_ids[0])
                          for j in self.joints}
+        # degree 변환(zero/dir)은 pinocchio 없이도 가능하므로 estimator와 분리해 항상 로드
+        self.cal = None
+        if config_path:
+            try:
+                from ..config import load_gravity_cal
+                self.cal = load_gravity_cal(Path(config_path).parent / "calibration.yaml")
+            except Exception as e:
+                self._log(f"gravity calibration not loaded (degree goto disabled): {e}")
         self.estimator = self._new_estimator(config_path)
         # Control lease: exclusive right to stream actions (Franka's control() session). Revoked on
         # REFLEX/STOPPED/idle so a client cannot keep driving without acknowledging the event.
@@ -407,6 +415,11 @@ class Daemon:
                 return {"ok": False, "error": f"unknown joints {sorted(unknown)}"}
             if self.mode is not ArmMode.MOVE:
                 return {"ok": False, "error": f"goto needs MOVE mode (now {self.mode.value}); send 'move' first"}
+            if msg.get("unit") == "deg":
+                # REP-103 규약의 각도[deg] → 관절 프레임 틱 (calibration zero_ticks/dir)
+                if self.cal is None or not self.cal.zero_ticks:
+                    return {"ok": False, "error": "degree goto needs calibration (gravity.zero_ticks) - run cookbook/2_pose_calibration/230_calibrate_zero.py first"}
+                target = {n: self.cal.ticks(n, float(v)) for n, v in target.items()}
             by_name = {j.name: j for j in self.joints}
             clamped, notes = {}, {}
             for name, v in target.items():

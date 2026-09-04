@@ -104,7 +104,7 @@ sopod --config configs/arm.yaml            # 또는 python -m sopo.runtime.daemo
 # 터미널 2: 상태 / 명령
 python -m sopo.runtime.cli watch                   # 50Hz 상태 스트림 (모드, 관절, 부하, 전압, 지터)
 python -m sopo.runtime.cli init                    # 자가진단 → standby_pose, 토크 유지
-python -m sopo.runtime.cli goto J4=2300 J6=2500    # 단발 목표 (MOVE 모드에서)
+python -m sopo.runtime.cli goto J4=45 J6=-90       # 단발 목표, degree (REP-103 규약, MOVE 모드에서). raw 틱은 --ticks
 python -m sopo.runtime.cli recover                 # REFLEX 래칭 해제
 python -m sopo.runtime.cli idle                    # 토크 OFF
 

@@ -25,7 +25,8 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
     for c in ("status", "watch", "move", "idle", "guiding", "recover", "init", "shutdown", "tare_ext"):
         sub.add_parser(c)
-    g = sub.add_parser("goto"); g.add_argument("targets", nargs="+", help="J2=1200 J3=2500 ...")
+    g = sub.add_parser("goto"); g.add_argument("targets", nargs="+", help="J2=45 J3=-30 ... (degree, REP-103)")
+    g.add_argument("--ticks", action="store_true", help="degree 대신 raw 모터 틱으로 해석 (J2=2300 ...)")
     g.add_argument("--no-wait", action="store_true", help="return right after the command is accepted")
     g.add_argument("--timeout", type=float, default=20.0)
     args = parser.parse_args()
@@ -42,8 +43,9 @@ def main() -> None:
         except KeyboardInterrupt:
             pass
     elif args.cmd == "goto":
-        action = {k: int(v) for k, v in (t.split("=") for t in args.targets)}
-        r = c.command("goto", action=action)
+        action = {k: float(v) if not args.ticks else int(v)
+                  for k, v in (t.split("=") for t in args.targets)}
+        r = c.command("goto", action=action, unit="ticks" if args.ticks else "deg")
         if not r.get("ok"):
             print("refused:", r.get("error")); sys.exit(1)
         for n, msg in r.get("clamped", {}).items():

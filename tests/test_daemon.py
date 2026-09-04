@@ -243,3 +243,41 @@ def test_estimator_absent_without_config_path(monkeypatch):
     assert c.command("move")["ok"] and d.mode.value == "move"
     c.command("shutdown"); t.join(timeout=3)
 
+
+
+def test_goto_degree_unit(monkeypatch):
+    """goto unit=deg: REP-103 각도를 calibration zero/dir로 틱에 변환한다."""
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6605, "cmd": 6606, "action": 6607}
+    arm = pathlib.Path(__file__).resolve().parents[1] / "configs" / "arm.yaml"
+    d = daemon_mod.Daemon(CFG, ports, config_path=str(arm))
+    assert d.cal is not None and d.cal.zero_ticks, "calibration.yaml gravity.zero_ticks 필요"
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.runtime.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    assert c.command("move")["ok"]
+    zero_j4 = d.cal.zero_ticks["J4"]
+    r = c.command("goto", action={"J4": 0.0}, unit="deg")
+    assert r["ok"] and r["accepted"]["J4"] == round(zero_j4)
+    r = c.command("goto", action={"J4": 90.0}, unit="deg")
+    assert r["ok"] and r["accepted"]["J4"] == round(zero_j4 + 4096 / 4)
+    # ticks 경로는 그대로
+    r = c.command("goto", action={"J4": 2500}, unit="ticks")
+    assert r["ok"] and r["accepted"]["J4"] == 2500
+    c.command("shutdown"); t.join(timeout=3)
+
+
+def test_goto_degree_without_calibration(monkeypatch):
+    """calibration이 없으면 degree goto는 명확한 오류를 반환한다."""
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6615, "cmd": 6616, "action": 6617}
+    d = daemon_mod.Daemon(CFG, ports)  # config_path 없음 → cal=None
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.runtime.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    assert c.command("move")["ok"]
+    r = c.command("goto", action={"J4": 90.0}, unit="deg")
+    assert r["ok"] is False and "230_calibrate_zero" in r["error"]
+    r = c.command("goto", action={"J4": 2500})  # ticks는 여전히 동작
+    assert r["ok"]
+    c.command("shutdown"); t.join(timeout=3)
