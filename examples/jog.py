@@ -45,7 +45,7 @@ def main() -> None:
     bus = FeetechBus(cfg["arm"]["port"], cfg["arm"].get("baudrate", 1_000_000))
     bus.connect()
     for w in verify_eprom(bus, limits, ids):
-        print(f"warn (EPROM drift): {w} -> run cookbook/10_persist_caps.py", file=sys.stderr)
+        print(f"warn (EPROM drift): {w} -> run cookbook/3_safety_torque/320_persist_caps.py", file=sys.stderr)
 
     reader = KeyReader()
     source = JogSource([j.name for j in joints], reader.poll, step=args.step)

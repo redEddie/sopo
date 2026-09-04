@@ -17,6 +17,7 @@ import threading
 import time
 from collections import deque
 from enum import Enum
+from pathlib import Path
 
 import zmq
 
@@ -42,7 +43,8 @@ class ArmMode(str, Enum):
 
 
 class Daemon:
-    def __init__(self, cfg: dict, ports: dict | None = None, watchdog_s: float = 0.5, release_on_exit: bool = False):
+    def __init__(self, cfg: dict, ports: dict | None = None, watchdog_s: float = 0.5, release_on_exit: bool = False,
+                 config_path: str | None = None):
         self.cfg = cfg
         self.release_on_exit = release_on_exit
         self.ports = {**DEFAULT_PORTS, **(ports or {})}
@@ -67,6 +69,11 @@ class Daemon:
         self.present: dict[str, int] = {}
         self.load: dict[int, int] = {}
         self.rp: dict[int, int] = {}
+        self.raw_pos: dict[int, int] = {}   # 물리 raw 틱 (외력 관측기용 — 연속 관절 논리각이 아님)
+        self.ext: dict[str, float] = {}     # 관절별 외력 토크 [N·m] (estimator 없으면 빈 dict)
+        self._ref_ids = {j.name: (j.reference_id if isinstance(j, DualMotorJoint) else j.motor_ids[0])
+                         for j in self.joints}
+        self.estimator = self._new_estimator(config_path)
         # Control lease: exclusive right to stream actions (Franka's control() session). Revoked on
         # REFLEX/STOPPED/idle so a client cannot keep driving without acknowledging the event.
         self.lease: dict | None = None
@@ -74,12 +81,38 @@ class Daemon:
 
     # ------------------------------------------------------------------ setup
     def _new_reflex(self) -> Reflex:
-        r = Reflex(self.limits, make_pairs(self.cfg), ReflexConfig())
+        # 외력 임계값은 arm.yaml safety 섹션에서 덮어쓸 수 있다 (ext_warn_nm/ext_trip_nm/t_ext)
+        safety = self.cfg.get("safety", {})
+        rc = ReflexConfig(
+            ext_warn_nm=float(safety.get("ext_warn_nm", ReflexConfig.ext_warn_nm)),
+            ext_trip_nm=float(safety.get("ext_trip_nm", ReflexConfig.ext_trip_nm)),
+            t_ext=float(safety.get("t_ext", ReflexConfig.t_ext)),
+        )
+        r = Reflex(self.limits, make_pairs(self.cfg), rc)
         for j in self.joints:
             if isinstance(j, ContinuousJoint) and j.range_bounds():
                 lo, hi = j.range_bounds()
                 r.set_limit(j.motor_id, lo, hi)
         return r
+
+    def _new_estimator(self, config_path: str | None):
+        """외력 관측기를 만든다. config_path가 없거나 모델/캘리브레이션을 못 읽으면 None (pin 미설치 등)."""
+        if not config_path:
+            return None
+        try:
+            from ..config import load_gravity_cal, make_gravity_model
+            from ..model.estimation import ExternalTorqueEstimator
+
+            # calibration 경로 규칙은 load_arm_config와 동일: arm.yaml 옆의 calibration.yaml
+            cal = load_gravity_cal(Path(config_path).parent / "calibration.yaml")
+            if not cal.zero_ticks:
+                raise ValueError("gravity.zero_ticks 없음 — cookbook/4_torque_model/410_gravity_check.py --calibrate-vertical 먼저")
+            est = ExternalTorqueEstimator(make_gravity_model(config_path), cal, ref_ids=self._ref_ids)
+            self._log(f"external torque estimator on (calibration: {Path(config_path).parent / 'calibration.yaml'})")
+            return est
+        except Exception as e:
+            self._log(f"external torque estimator disabled: {e}")
+            return None
 
     def start(self) -> None:
         self.bus.connect()
@@ -117,7 +150,7 @@ class Daemon:
                 self.bus.disconnect(disable_torque_ids=self.ids)
             else:
                 self._freeze("daemon exit")
-                self._log("shutting down: arm HOLDS (torque on). release: python cookbook/11_torque_off.py")
+                self._log("shutting down: arm HOLDS (torque on). release: python cookbook/1_setup/150_torque_off.py")
                 self.bus.disconnect()
 
     # ---------------------------------------------------------------- threads
@@ -153,7 +186,8 @@ class Daemon:
             try:
                 self.present = read_joints(self.bus, self.joints)
                 self.load = self.bus.sync_read("Present_Load", self.ids)
-                self.rp = reflex_present_view(self.bus, self.joints, self.present)
+                self.raw_pos = self.bus.sync_read("Present_Position", self.ids)
+                self.rp = reflex_present_view(self.bus, self.joints, self.present, self.raw_pos)
                 if self.mode is ArmMode.MOVE:
                     action = self.stream.get_action(self.present, t0)
                     step = SOFT_START_STEP if self.soft else self.limits.max_relative_target
@@ -190,14 +224,34 @@ class Daemon:
                 except Exception:
                     pass
 
+            if self.estimator is not None and comm_ok:
+                try:
+                    vel = self.bus.sync_read("Present_Velocity", self.ids)
+                except Exception:
+                    vel = None  # 읽기 실패 시 v=0 (정지 가정) — 위치 미분 폴백은 하지 않는다
+                try:
+                    self.ext = self.estimator.update(self.raw_pos, self.load, vel)
+                except Exception as e:
+                    self._log(f"ext estimator error: {e}")
+
+            # 외력 판정은 정착(목표 도달) 상태에서만: 이동 중에는 서보 PID 과도응답과
+            # 미모델 가속 항이 잔차를 오염시킨다. 상태 발행은 항상 한다.
+            settled = (self.mode is ArmMode.MOVE and not self.soft and self.goal
+                       and all(abs(self.goal[n] - self.present.get(n, 0)) < ARRIVAL_TICKS
+                               for n in self.goal))
+
             if self.mode in (ArmMode.MOVE, ArmMode.REFLEX) and self.goal:
                 mg = motor_goals(self.joints, self.goal)
-                trips = self.reflex.update(t0, self.rp, mg, self.load, temps=temps, comm_ok=comm_ok)
+                trips = self.reflex.update(t0, self.rp, mg, self.load, temps=temps, comm_ok=comm_ok,
+                                           ext_torque=(self.ext or None) if settled else None,
+                                           ext_joint_motor=self._ref_ids)
                 for trip in trips:
                     line = describe_trip(trip, self.joints); self._log(line); self.last_trips = (self.last_trips + [line])[-5:]
                 for w in self.reflex.warnings():
                     self._log(f"warn: {w}")
-                self.blackbox.record(t0, self.reflex.mode.value, self.rp, mg, self.load, ";".join(t.event.value for t in trips))
+                ext_note = ";".join(f"{n}:{v:+.2f}" for n, v in self.ext.items())
+                self.blackbox.record(t0, self.reflex.mode.value, self.rp, mg, self.load, ";".join(t.event.value for t in trips),
+                                     ext=ext_note)
                 if self.reflex.mode is ReflexMode.STOPPED:
                     self.mode = ArmMode.STOPPED; self._freeze("stopped")
                     self._log(f"STOPPED (comm loss / overtemp) - arm holds. blackbox: {self.blackbox.dump('stopped')}. 'idle' to release")
@@ -293,6 +347,14 @@ class Daemon:
         cmd = msg.get("cmd")
         if cmd == "status":
             return {"ok": True, "state": self._state(0.0, 0.0)}
+        if cmd == "tare_ext":
+            # 외력 관측기 0점 맞추기: 현재 잔차를 바이어스로 저장. 모드 무관하게 허용.
+            # (cmd는 루프 스레드에서 드레인되므로 pinocchio 스레드 안전)
+            if self.estimator is None:
+                return {"ok": False, "error": "external torque estimator not available (config_path/pinocchio/calibration 확인)"}
+            self.estimator.tare()
+            self._log(f"external torque tare: biases { {n: round(b, 3) for n, b in self.estimator.biases.items()} }")
+            return {"ok": True, "biases": {n: round(b, 4) for n, b in self.estimator.biases.items()}}
         if cmd == "acquire":
             name = str(msg.get("name") or "client")
             if self.mode in (ArmMode.REFLEX, ArmMode.STOPPED):
@@ -395,6 +457,7 @@ class Daemon:
             "t": time.time(), "mode": self.mode.value, "reflex": self.reflex.mode.value, "stale": self.stream.stale,
             "lease": self.lease["name"] if self.lease else None,
             "joints": joints, "motors": {str(i): {"pos": self.rp.get(i), "load": self.load.get(i), "temp": self.temps.get(i)} for i in self.ids},
+            "ext_torque": {n: round(v, 3) for n, v in self.ext.items()},
             "volt": list(self.volt), "cycle_ms": round(elapsed * 1e3, 2), "jitter_p99_ms": round(p99, 2), "trips": self.last_trips,
         }
 
@@ -418,7 +481,8 @@ def main() -> None:
     parser.add_argument("--release-on-exit", action="store_true", help="drop torque when the daemon exits (default: hold, Cat 2)")
     args = parser.parse_args()
     cfg = load_arm_config(args.config)
-    d = Daemon(cfg, {"state": args.state_port, "cmd": args.cmd_port, "action": args.action_port}, args.watchdog, args.release_on_exit)
+    d = Daemon(cfg, {"state": args.state_port, "cmd": args.cmd_port, "action": args.action_port}, args.watchdog, args.release_on_exit,
+               config_path=args.config)
     try:
         d.start()
     except KeyboardInterrupt:

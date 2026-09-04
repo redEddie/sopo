@@ -6,14 +6,14 @@
 목표를 거부하게 만든다 — 호스트 소프트웨어 버그에 대한 2차 방어선.
 
 예시:
-    python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 19
-    python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 15,16 --write-eprom
+    python cookbook/2_pose_calibration/200_find_limits.py --port /dev/ttyACM0 --ids 19
+    python cookbook/2_pose_calibration/200_find_limits.py --port /dev/ttyACM0 --ids 15,16 --write-eprom
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

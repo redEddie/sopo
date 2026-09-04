@@ -9,14 +9,14 @@ Torque_Limit(RAM)은 전원을 켤 때 Max_Torque_Limit(EPROM)에서 복원되�
 Min/Max_Position_Limit(EPROM)은 펌웨어가 범위 밖 목표를 거부하게 만든다.
 
 예시:
-    python cookbook/10_persist_caps.py --config configs/arm.yaml --dry-run   # 현재값 vs 기록할 값
-    python cookbook/10_persist_caps.py --config configs/arm.yaml            # 'yes' 입력 후 기록
+    python cookbook/3_safety_torque/320_persist_caps.py --config configs/arm.yaml --dry-run   # 현재값 vs 기록할 값
+    python cookbook/3_safety_torque/320_persist_caps.py --config configs/arm.yaml            # 'yes' 입력 후 기록
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 

@@ -2,13 +2,13 @@
 """토크 한계를 낮추고 손으로 밀었을 때 전류/부하가 포화되는지 보여준다.
 
 예시:
-    python cookbook/03_torque_limits.py --port /dev/ttyACM0 --id 1
+    python cookbook/3_safety_torque/310_torque_limits.py --port /dev/ttyACM0 --id 1
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

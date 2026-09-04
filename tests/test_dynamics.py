@@ -147,3 +147,23 @@ def test_make_gravity_model_matches_joint_map():
         assert gm2.joint_map[n]["stall"] == pytest.approx(spec["stall"])
         assert gm2.joint_map[n]["ids"] == spec["ids"]
         assert gm2.joint_map[n]["mount_sign"] == spec["mount_sign"]
+
+
+def test_rnea_rest_equals_gravity(gm):
+    """정지(v 생략 또는 0)에서 RNEA는 G(q)로 축소한다."""
+    pose = q(J2=0.7, J3=-0.4)
+    g = gm.gravity(pose)
+    r_none = gm.rnea(pose)
+    r_zero = gm.rnea(pose, q())  # 모든 관절 v=0
+    for n in g:
+        assert r_none[n] == pytest.approx(g[n], abs=1e-9)
+        assert r_zero[n] == pytest.approx(g[n], abs=1e-9)
+
+
+def test_rnea_moving_differs_from_gravity(gm):
+    """회전 중엔 코리올리/원심 항이 더해져 RNEA가 G(q)와 달라진다 (J2 회전 → J3에 나타남)."""
+    pose = q(J2=math.pi / 2)
+    r = gm.rnea(pose, q(J2=2.0))  # J2만 2 rad/s
+    g = gm.gravity(pose)
+    assert abs(r["J3"] - g["J3"]) > 0.05                      # 코리올리 항이 J3를 움직임
+    assert r["J2"] == pytest.approx(g["J2"], abs=1e-6)        # J2 축 자체는 중력 그대로

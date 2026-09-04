@@ -8,13 +8,13 @@
   settle_pp / settle_osc / settle_t : 지정 관절 도착 후 1초 창의 위치 피크-투-피크, 부호 반전 횟수, 6틱 안 정착 시간
 
 예시:
-    python cookbook/16_wobble_test.py --config configs/arm.yaml --move J2:+300,J3:+300 --cycles 3
+    python cookbook/4_torque_model/430_wobble_test.py --config configs/arm.yaml --move J2:+300,J3:+300 --cycles 3
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import statistics as st

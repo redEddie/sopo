@@ -5,16 +5,16 @@
 저장하므로 세션마다 바퀴 수가 달라도 같은 물리 자세를 가리킨다.
 
 예시:
-    python cookbook/13_capture_pose.py --config configs/arm.yaml                # standby_pose 갱신
-    python cookbook/13_capture_pose.py --config configs/arm.yaml --key rest_pose
-    python cookbook/13_capture_pose.py --config configs/arm.yaml --dry-run
+    python cookbook/2_pose_calibration/220_capture_pose.py --config configs/arm.yaml                # standby_pose 갱신
+    python cookbook/2_pose_calibration/220_capture_pose.py --config configs/arm.yaml --key rest_pose
+    python cookbook/2_pose_calibration/220_capture_pose.py --config configs/arm.yaml --dry-run
 """
 
 import re
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 

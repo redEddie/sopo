@@ -88,7 +88,7 @@ print("scan done")
 주의: Protocol 2.0의 Length 필드는 CRC 2바이트를 포함하므로 패킷 전체 길이는 `7 + Length`
 (처음에 `7 + Length + 2`로 계산해서 응답을 놓친 적 있음).
 
-Feetech 쪽 스캔은 기존 `cookbook/00_scan.py` 사용.
+Feetech 쪽 스캔은 기존 `cookbook/1_setup/100_scan.py` 사용.
 
 ## 향후 도입 시 작업 후보
 

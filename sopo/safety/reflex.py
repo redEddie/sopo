@@ -29,6 +29,7 @@ class Event(Enum):
     COMM_LOSS = "comm_loss"
     OVERTEMP = "overtemp"
     JOINT_LIMIT = "joint_limit"  # 측정 위치가 소프트 리밋 밖 (libfranka joint_position_limits_violation)
+    EXTERNAL_FORCE = "external_force"  # 모델 기반 잔차 τ_ext가 임계 초과 지속 (model/estimation.py)
 
 
 @dataclass
@@ -51,6 +52,10 @@ class ReflexConfig:
     recover_load_ratio: float = 0.9  # recover() allowed while hold load < this * cap (gravity load is not external force)
     limit_margin: int = 30  # 소프트 리밋을 이만큼 넘어야 JOINT_LIMIT (클램프 자체는 이벤트 아님)
     t_limit: float = 0.5    # 리밋 밖에 이만큼 머물러야 JOINT_LIMIT (되돌아오는 중이면 안 뜸)
+    ext_warn_nm: float = 0.3    # |τ_ext|가 이 이상이면 경고 (ExternalTorqueEstimator 잔차)
+    ext_trip_nm: float = 1.0    # 이 이상이 t_ext 지속되면 EXTERNAL_FORCE 트립
+    t_ext: float = 0.3          # 지속 시간 [s]
+    ext_motion_ticks: int = 40  # 사이클당 위치 변화가 이 이상이면 이동 중 — 잔차가 불신뢰라 타이머 리셋
 
 
 @dataclass
@@ -114,6 +119,8 @@ class Reflex:
         self._extra_limits: dict[int, tuple[int, int]] = {}  # continuous joints: home +/- range (logical frame)
         self._pair_start: dict[str, float] = {}
         self._temp_over: dict[int, int] = {}
+        self._ext_start: dict[str, float] = {}      # 관절별 τ_ext 임계 초과 시작 시각
+        self._ext_prev_pos: dict[str, int] = {}     # 관절별 직전 위치 (이동 게이팅용)
 
     @property
     def mode(self) -> Mode:
@@ -127,6 +134,8 @@ class Reflex:
         load: dict[int, int],
         temps: dict[int, int] | None = None,
         comm_ok: bool = True,
+        ext_torque: dict[str, float] | None = None,
+        ext_joint_motor: dict[str, int] | None = None,
     ) -> list[Trip]:
         """Evaluate one control cycle and return any new trips."""
         self._warnings.clear()
@@ -296,6 +305,33 @@ class Reflex:
                     )
                     new_trips.extend(self._emit(trip))
 
+        # EXTERNAL_FORCE: 모델 잔차 τ_ext가 임계 초과 지속 (자중은 모델이 빼주므로 순수 외력만 남는다).
+        # 이동 중(목표 급변 직후 또는 사이클당 위치 변화 큼)에는 잔차가 불신뢰라 타이머를 리셋한다.
+        if self._mode is not Mode.REFLEX and ext_torque:
+            for name, tau in ext_torque.items():
+                mid = (ext_joint_motor or {}).get(name)
+                st = self._motor_states.get(mid) if mid is not None else None
+                moving = st is not None and now < st.accel_until
+                pos = present.get(mid) if mid is not None else None
+                prev = self._ext_prev_pos.get(name)
+                if pos is not None and prev is not None and abs(pos - prev) >= self._cfg.ext_motion_ticks:
+                    moving = True
+                if pos is not None:
+                    self._ext_prev_pos[name] = pos
+                mag = abs(tau)
+                if moving or mag <= self._cfg.ext_warn_nm:
+                    self._ext_start.pop(name, None)
+                    continue
+                if mag <= self._cfg.ext_trip_nm:
+                    self._warnings.append(f"{name} external torque {tau:+.2f} N·m (warn {self._cfg.ext_warn_nm})")
+                    self._ext_start.pop(name, None)
+                    continue
+                start = self._ext_start.setdefault(name, now)
+                if now - start >= self._cfg.t_ext:
+                    trip = Trip(Event.EXTERNAL_FORCE, mid,
+                                f"{name} |τ_ext| {mag:.2f} N·m > {self._cfg.ext_trip_nm} for {now - start:.2f}s")
+                    new_trips.extend(self._emit(trip))
+
         return new_trips
 
     def set_limit(self, motor_id: int, lo: int, hi: int) -> None:
@@ -354,6 +390,7 @@ class Reflex:
             state.err_start = None
             state.limit_start = None
         self._pair_start.clear()
+        self._ext_start.clear()
         return True, ""
 
     def warnings(self) -> list[str]:

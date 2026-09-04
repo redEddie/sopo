@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
 """토크 캡을 걸고 관절을 ±delta 왕복시키며 실제로 움직이는지, 부하/전류가 얼마나 쓰이는지 본다.
 
-06_gravity_load.py가 낸 권장 Torque_Limit을 검증하는 용도. 이동 중 max load가 캡에
+3_safety_torque/300_gravity_load.py가 낸 권장 Torque_Limit을 검증하는 용도. 이동 중 max load가 캡에
 붙어 있으면(예: 캡 150에 load 128) 가속 여유가 없다는 뜻이니 캡을 올린다.
 
 듀얼 모터 관절(J2: 10,11 / J3: 15,16)은 반전 장착이라 한쪽을 --invert로 지정해
 서로 반대 방향으로 같은 양을 움직인다. 안 그러면 두 모터가 서로 싸운다.
 
 예시:
-    python cookbook/07_verify_torque.py --port /dev/ttyACM0 --ids 19 --torque-limit 150
-    python cookbook/07_verify_torque.py --port /dev/ttyACM0 --ids 15,16 --invert 16 --torque-limit 300 --delta 100
+    python cookbook/4_torque_model/400_verify_torque.py --port /dev/ttyACM0 --ids 19 --torque-limit 150
+    python cookbook/4_torque_model/400_verify_torque.py --port /dev/ttyACM0 --ids 15,16 --invert 16 --torque-limit 300 --delta 100
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

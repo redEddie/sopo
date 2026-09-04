@@ -73,10 +73,15 @@ def clamp_joint_goals(
     return safe
 
 
-def reflex_present_view(bus: FeetechBus, joints: list[Joint], joint_pos: dict[str, int]) -> dict[int, int]:
-    """리플렉스용 모터별 현재 위치: 듀얼 쌍은 raw 둘 다(합 검사), 연속 관절은 논리각(goal과 같은 프레임)."""
+def reflex_present_view(bus: FeetechBus, joints: list[Joint], joint_pos: dict[str, int],
+                        raw: dict[int, int] | None = None) -> dict[int, int]:
+    """리플렉스용 모터별 현재 위치: 듀얼 쌍은 raw 둘 다(합 검사), 연속 관절은 논리각(goal과 같은 프레임).
+
+    raw를 넘기면 Present_Position sync_read를 다시 하지 않고 그 값을 쓴다
+    (호출자가 이미 읽은 경우 — 외력 관측기가 같은 raw를 쓴다).
+    """
     ids = [mid for j in joints for mid in j.motor_ids]
-    present = bus.sync_read("Present_Position", ids)
+    present = dict(raw) if raw is not None else bus.sync_read("Present_Position", ids)
     for j in joints:
         if isinstance(j, ContinuousJoint) and j.name in joint_pos:
             present[j.motor_id] = joint_pos[j.name]
@@ -114,7 +119,7 @@ def end_session(bus: FeetechBus, motor_ids: list[int], limits: SafetyLimits, rel
         return
     try:
         freeze(bus, motor_ids, limits)
-        print(f"arm HOLDS position (torque on, cap {limits.hold_torque_limit}‰). release with: python cookbook/11_torque_off.py")
+        print(f"arm HOLDS position (torque on, cap {limits.hold_torque_limit}‰). release with: python cookbook/1_setup/150_torque_off.py")
     except Exception as e:
         print(f"freeze failed ({e}) - servos keep their last goal", file=sys.stderr)
     bus.disconnect()
@@ -150,12 +155,13 @@ class Blackbox:
         self.rows: deque = deque(maxlen=int(seconds * rate_hz))
         self.out_dir = Path(out_dir)
 
-    def record(self, t: float, mode: str, present: dict[int, int], goal: dict[int, int], load: dict[int, int], note: str = "", volt: dict[int, int] | None = None) -> None:
+    def record(self, t: float, mode: str, present: dict[int, int], goal: dict[int, int], load: dict[int, int], note: str = "", volt: dict[int, int] | None = None, ext: str = "") -> None:
         row = [f"{t:.3f}", mode]
         for i in self.ids:
             row += [present.get(i, ""), goal.get(i, ""), load.get(i, "")]
         row.append(note)
         row.append(min(volt.values()) / 10 if volt else "")
+        row.append(ext)  # "J2:+0.42;J3:-0.10" 형태의 외력 토크 [N·m] 채널
         self.rows.append(row)
 
     def dump(self, reason: str) -> Path | None:
@@ -165,7 +171,7 @@ class Blackbox:
         path = self.out_dir / f"blackbox_{datetime.now():%Y%m%d_%H%M%S}_{reason}.csv"
         with path.open("w", newline="") as f:
             w = csv.writer(f)
-            w.writerow(["t", "mode"] + [f"{k}{i}" for i in self.ids for k in ("pos", "goal", "load")] + ["note", "vmin"])
+            w.writerow(["t", "mode"] + [f"{k}{i}" for i in self.ids for k in ("pos", "goal", "load")] + ["note", "vmin", "ext"])
             w.writerows(self.rows)
         self.rows.clear()  # 다음 파일에 같은 구간이 다시 실리지 않도록
         return path

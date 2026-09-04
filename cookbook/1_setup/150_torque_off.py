@@ -2,14 +2,14 @@
 """모든(또는 지정) 모터의 토크를 확실히 끈다 — 재시도 + 읽기 검증.
 
 예시:
-    python cookbook/11_torque_off.py --port /dev/ttyACM0            # ID 0~30 스캔 후 전부 OFF
-    python cookbook/11_torque_off.py --port /dev/ttyACM0 --ids 10,11
+    python cookbook/1_setup/150_torque_off.py --port /dev/ttyACM0            # ID 0~30 스캔 후 전부 OFF
+    python cookbook/1_setup/150_torque_off.py --port /dev/ttyACM0 --ids 10,11
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 

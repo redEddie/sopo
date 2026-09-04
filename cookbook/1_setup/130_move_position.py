@@ -2,13 +2,13 @@
 """한 모터를 안전하게 목표 위치로 이동시킨다.
 
 예시:
-    python cookbook/02_move_position.py --port /dev/ttyACM0 --id 1 --goal 2500
+    python cookbook/1_setup/130_move_position.py --port /dev/ttyACM0 --id 1 --goal 2500
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

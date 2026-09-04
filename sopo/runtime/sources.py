@@ -168,6 +168,10 @@ class StreamSource:
 
     push(action, now)로 최신 액션을 갱신하고, get_action은 마지막 액션을 돌려준다.
     watchdog_s 동안 새 액션이 없으면 현재 위치(홀드)를 돌려준다 — 정책이 멈추면 팔도 멈춘다.
+
+    부분 액션(일부 관절만 지정)에서 미지정 관절은 현재 위치를 "매 사이클" 따라가지 않고,
+    마지막으로 지정된 목표를 유지한다. 라이브 present를 따라가면 중력에 1틱 처질 때마다
+    목표가 같이 내려가 추종 오차도 포화도 없이 팔이 스스로 기는 사고가 된다.
     """
 
     name = "stream"
@@ -179,6 +183,7 @@ class StreamSource:
         self._sticky = False
         self.stale = True
         self._hold: dict[str, int] | None = None
+        self._targets: dict[str, int] = {}  # 관절별 마지막 목표 (미지정 관절 홀드용)
 
     def push(self, action: dict[str, int], now: float, sticky: bool = False) -> None:
         """sticky=True: 다음 push까지 워치독 없이 유지 (goto 같은 단발 목표)."""
@@ -188,6 +193,7 @@ class StreamSource:
 
     def clear(self) -> None:
         self._action = None
+        self._targets.clear()
 
     def connect(self) -> None:
         pass
@@ -199,11 +205,17 @@ class StreamSource:
             # 끌려가서 저항도 못 하고 외력 감지(DISTURBANCE)도 안 된다.
             if not self.stale or self._hold is None:
                 self._hold = dict(present)
+                self._targets.clear()  # 다음 유효 액션에서 미지정 관절은 새로 현재로 맞춘다
             self.stale = True
             return {n: self._hold.get(n, present[n]) for n in present}
         self.stale = False
         self._hold = None
-        return {n: self._action.get(n, present[n]) for n in present}
+        for n in present:
+            if n in self._action:
+                self._targets[n] = self._action[n]
+            else:
+                self._targets.setdefault(n, present[n])  # 처음 보는 관절만 현재로 초기화
+        return {n: self._targets[n] for n in present}
 
     def is_done(self) -> bool:
         return False

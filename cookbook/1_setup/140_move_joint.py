@@ -4,14 +4,14 @@
 듀얼 모터 관절(J2/J3)의 대칭 동작과 리플렉스를 확인할 수 있다.
 
 예시:
-    python cookbook/08_move_joint.py --config configs/arm.yaml --joint J2 --goal 2000
-    python cookbook/08_move_joint.py --config configs/arm.yaml --joint J3 --goal 1500 --torque-limit 200
+    python cookbook/1_setup/140_move_joint.py --config configs/arm.yaml --joint J2 --goal 2000
+    python cookbook/1_setup/140_move_joint.py --config configs/arm.yaml --joint J3 --goal 1500 --torque-limit 200
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

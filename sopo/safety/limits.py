@@ -68,14 +68,14 @@ class SafetyLimits:
     # arm FREEZES with torque kept - goal = present and Torque_Limit raised to hold_torque_limit so it
     # stays rigid under gravity and a held object. Torque is dropped only by an explicit idle/guiding.
     hold_torque_limit: int = 600
-    # EPROM Max_Torque_Limit written by cookbook/10_persist_caps: the hardware ceiling. RAM Torque_Limit
+    # EPROM Max_Torque_Limit written by cookbook/3_safety_torque/320_persist_caps: the hardware ceiling. RAM Torque_Limit
     # (motion caps, lower) is set by apply_safety() on every torque-on; hold raises it up to the ceiling.
     eprom_torque_ceiling: int = 600  # >= ~30: below that the P controller output (~8 permille/tick) cannot move a loaded joint
 
     # Optional per-joint overrides: motor_id -> (min_position, max_position)
     position_limits: dict[int, tuple[int, int]] = field(default_factory=dict)
     # Optional per-joint effort caps: motor_id -> per-mille. Measured with
-    # cookbook/06_gravity_load.py so each joint gets just enough for its own weight.
+    # cookbook/3_safety_torque/300_gravity_load.py so each joint gets just enough for its own weight.
     torque_limits: dict[int, int] = field(default_factory=dict)
     # Optional absolute current trip in mA (Protection_Current, EPROM). Unlike
     # Torque_Limit (a duty-cycle fraction) this is a physical quantity: the motor
@@ -152,7 +152,7 @@ def verify_eprom(bus: FeetechBus, limits: SafetyLimits, motor_ids: list[int]) ->
     for motor_id in motor_ids:
         eprom_cap = bus.read("Max_Torque_Limit", motor_id)
         if eprom_cap != limits.eprom_torque_ceiling:
-            problems.append(f"ID{motor_id}: EPROM Max_Torque_Limit {eprom_cap}‰ != ceiling {limits.eprom_torque_ceiling}‰ (run cookbook/10_persist_caps.py)")
+            problems.append(f"ID{motor_id}: EPROM Max_Torque_Limit {eprom_cap}‰ != ceiling {limits.eprom_torque_ceiling}‰ (run cookbook/3_safety_torque/320_persist_caps.py)")
         if motor_id in limits.position_limits:
             lo, hi = limits.position_limits[motor_id]
             got = (bus.read("Min_Position_Limit", motor_id), bus.read("Max_Position_Limit", motor_id))

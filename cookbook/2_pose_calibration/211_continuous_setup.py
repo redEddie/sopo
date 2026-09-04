@@ -6,14 +6,14 @@
 
 예시:
     # 관절을 케이블 풀린 자세에 놓고 (토크 OFF)
-    python cookbook/12_continuous_setup.py --port /dev/ttyACM0 --id 19 --center
-    python cookbook/12_continuous_setup.py --port /dev/ttyACM0 --id 19 --status
+    python cookbook/2_pose_calibration/211_continuous_setup.py --port /dev/ttyACM0 --id 19 --center
+    python cookbook/2_pose_calibration/211_continuous_setup.py --port /dev/ttyACM0 --id 19 --status
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time
@@ -59,7 +59,7 @@ def main() -> None:
             bus.write("Max_Position_Limit", i, 0)
         time.sleep(0.05)
         print(f"multiturn ON: Phase={rd('Phase'):08b} limits={rd('Min_Position_Limit')}/{rd('Max_Position_Limit')} pos={rd('Present_Position')}")
-        print("verify: python cookbook/09_continuous_angle.py --id", i, " (rotate by hand past 360 deg: angle keeps growing, turns stay +0)")
+        print("verify: python cookbook/2_pose_calibration/210_continuous_angle.py --id", i, " (rotate by hand past 360 deg: angle keeps growing, turns stay +0)")
     finally:
         bus.disconnect()
 

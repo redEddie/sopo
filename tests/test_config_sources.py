@@ -135,6 +135,25 @@ def test_stream_source_stale_hold_is_latched_not_tracking():
     assert s.get_action({"J4": 2400}, 1.5) == {"J4": 2250}   # pushed by hand: goal stays -> arm resists
 
 
+def test_stream_source_partial_action_holds_unspecified_joints():
+    """부분 액션의 미지정 관절은 중력으로 present가 기어도 목표를 유지해야 한다.
+
+    회귀: goto J4=... 만 하면 J2가 매 사이클 present를 따라가 팔이 스스로 기었다.
+    """
+    from sopo.runtime.sources import StreamSource
+    s = StreamSource(watchdog_s=0.5)
+    present = {"J2": 3000, "J4": 2100}
+    s.push({"J4": 2300}, 0.0, sticky=True)
+    assert s.get_action(present, 0.1) == {"J2": 3000, "J4": 2300}
+    # 중력으로 J2가 처짐 — 목표는 3000에 고정되어야 한다
+    present = {"J2": 2950, "J4": 2290}
+    assert s.get_action(present, 0.2) == {"J2": 3000, "J4": 2300}
+    # 새 액션에서 지정된 관절만 갱신
+    s.push({"J2": 3100}, 0.3, sticky=True)
+    assert s.get_action(present, 0.4) == {"J2": 3100, "J4": 2300}
+
+
+
 def test_build_joint_map_from_repo_arm_yaml():
     """configs/arm.yaml에서 매핑 유도: J2 듀얼 합산 스톨/ids/mount_sign 확인."""
     import pytest

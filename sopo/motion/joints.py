@@ -113,7 +113,7 @@ class ContinuousJoint:
         self.name = name
         self.motor_id = motor_id
         self.range_ticks = range_ticks
-        # Absolute single-turn reading of the cable-relaxed pose (set with cookbook/09 --center, usually 2048).
+        # Absolute single-turn reading of the cable-relaxed pose (set with cookbook/2_pose_calibration/211 --center, usually 2048).
         # The encoder is absolute within a turn, so home = the copy of home_abs nearest to the first reading.
         # Only the turn count is unknown at power-on; with range_ticks <= 2048 that choice is unique.
         self.home_abs = home_abs

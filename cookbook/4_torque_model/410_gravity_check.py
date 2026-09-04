@@ -14,15 +14,15 @@ URDF(실측 질량 주입)에서 계산한 중력 토크가 실제 하드웨어�
 토크 OFF → 자세별 측정/예측 비교표. 반복 후 q로 종료하면 자세별 오차 요약을 보여준다.
 
 예시:
-    python cookbook/17_gravity_check.py --calibrate-vertical
-    python cookbook/17_gravity_check.py
-    python cookbook/17_gravity_check.py --hold-torque 400 --seconds 2
+    python cookbook/4_torque_model/410_gravity_check.py --calibrate-vertical
+    python cookbook/4_torque_model/410_gravity_check.py
+    python cookbook/4_torque_model/410_gravity_check.py --hold-torque 400 --seconds 2
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time
@@ -32,6 +32,18 @@ import yaml
 from sopo import FeetechBus, SafetyLimits, apply_safety
 from sopo.config import load_arm_config, load_gravity_cal, make_gravity_model, make_joints
 from sopo.motion.joints import DualMotorJoint
+
+
+def _rpad(s: str, width: int) -> str:
+    """표시 폭 기준 오른쪽 정렬 — 한글 등 동아시아 전각은 터미널에서 2칸이라 len() 패딩이 어긋난다."""
+    import unicodedata
+    w = sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+    return " " * max(0, width - w) + s
+
+
+def _header(cols: list[tuple[str, int]]) -> str:
+    return " | ".join(_rpad(h, w) for h, w in cols)
+
 
 
 def save_zero_ticks(path: Path, zero_ticks: dict, dirs: dict) -> None:
@@ -85,7 +97,7 @@ def run_scale_calibration(bus, gm, ids_of, names, all_ids, read_q, args, calib_p
     q1 = read_q(pos1)
     delta_nm = gm.extra_load_torque(q1, args.scale)
 
-    print(f"\n{'관절':>4} | {'모터별 Δ측정‰':>14} | {'예측 Δ‰':>8} | {'scale':>6}")
+    print("\n" + _header([("관절", 4), ("모터별 Δ측정‰", 14), ("예측 Δ‰", 8), ("scale", 6)]))
     new_scale = {}
     for n in names:
         loads = [load1[i] - load0[i] for i in ids_of[n]]
@@ -186,7 +198,7 @@ def main() -> None:
             pred_pm = gm.load_permille(q, cal.scale)
             ext_nm = gm.external_torque_from_loads(q, load, cal.scale)
 
-            print(f"\n{'관절':>4} | {'측정‰':>14} | {'예측‰':>8} | {'예측N·m':>8} | {'외력N·m':>8}")
+            print("\n" + _header([("관절", 4), ("측정‰", 14), ("예측‰", 8), ("예측N·m", 8), ("외력N·m", 8)]))
             for n in names:
                 loads = "/".join(f"{load[i]:+.0f}" for i in ids_of[n])
                 print(f"{n:>4} | {loads:>14} | {pred_pm[n]:+8.0f} | {pred_nm[n]:+8.3f} | {ext_nm[n]:+8.3f}")

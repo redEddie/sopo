@@ -8,13 +8,13 @@ ID는 EPROM 영역(주소 5)에 있어 쓰기 전 Lock을 해제해야 하며, �
 상황이라면 00_scan.py + 04_setup_motor.py를 사용한다.
 
 예시:
-    python cookbook/04_set_motor_id.py --port /dev/ttyACM0 --current-id 1 --new-id 2
+    python cookbook/1_setup/120_set_motor_id.py --port /dev/ttyACM0 --current-id 1 --new-id 2
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 

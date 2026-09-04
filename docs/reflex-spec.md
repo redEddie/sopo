@@ -15,7 +15,7 @@
 
 ```python
 class Mode(Enum): IDLE, MOVE, REFLEX, STOPPED          # STOPPED = 토크 해제됨, 재시작 필요
-class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP, JOINT_LIMIT
+class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP, JOINT_LIMIT, EXTERNAL_FORCE
 ```
 
 ## 3. 판정 규칙 (모터 단위, 기본값은 ReflexConfig로 조정)
@@ -31,6 +31,22 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 | JOINT_LIMIT | 캘리브레이션된 모터의 **측정** 위치가 소프트 리밋을 `limit_margin` 넘게 벗어남 (명령 클램프는 이벤트 아님 — 외력에 밀리거나 캡 부족으로 처진 경우) | limit_margin 30틱 | libfranka `joint_position_limits_violation` |
 
 `cap`은 `SafetyLimits.torque_for(motor_id)`. 부하 부호는 미는 방향 → `backoff` 방향 결정에 쓴다.
+
+### EXTERNAL_FORCE (관절 단위, `model/estimation.py` 연동)
+
+배경: COLLISION은 모터 부하 포화(캡 근처)만 본다 — 캡 이하로 미는 손이나 짐처럼 **자중과 충돌을 구분**하지 못한다.
+외력 관측기가 관절별 잔차 `τ_ext = LPF(τ_meas_phys − RNEA(q, q̇, 0))`(정지 시 RNEA = G(q))를 추정하면
+자중은 모델이 빼주므로 순수 외력만 남는다. 이 잔차가 `update(..., ext_torque=)`로 들어온다.
+
+| 단계 | 조건 | 기본값 |
+|---|---|---|
+| 경고 | `ext_warn_nm < \|τ_ext\| ≤ ext_trip_nm` | 0.3 N·m — `_warnings`에만 기록 |
+| 트립 | `\|τ_ext\| > ext_trip_nm`이 `t_ext` 지속 | 1.0 N·m / 0.3 s → `Mode.REFLEX` (COLLISION과 동일 부류, backoff는 충돌 전용이라 안 걸림) |
+
+게이팅: 목표 급변 직후(`accel_until`) 또는 사이클당 위치 변화 ≥ `ext_motion_ticks`(40틱)면 **이동 중**으로 보고
+타이머를 리셋한다 — 동역학 모델 오차가 커지는 구간이라 잔차를 믿지 않는다. `ext_torque=None`이면 비활성(기존 호출과 동일).
+REFLEX 모드에서는 신규 판정을 하지 않는다(기존 per-motor 루프와 동일한 조기 종료). 정류 바이어스(듀얼 preload·마찰·질량 오차)는
+관측기의 `tare()`로 제거한다 (데몬 명령 `tare_ext`).
 
 ## 4. 리플렉스 동작
 
@@ -64,7 +80,10 @@ class Reflex:
     def mode(self) -> Mode
     def update(self, now: float, present: dict[int, int], goal: dict[int, int],
                load: dict[int, int], temps: dict[int, int] | None = None,
-               comm_ok: bool = True) -> list[Trip]
+               comm_ok: bool = True,
+               ext_torque: dict[str, float] | None = None,      # 관절별 τ_ext [N·m] (None이면 EXTERNAL_FORCE 비활성)
+               ext_joint_motor: dict[str, int] | None = None,   # 관절명 → 기준 모터 ID
+               ) -> list[Trip]
         """매 사이클 호출. goal은 이번 사이클에 보낸(또는 보낼) 목표. temps는 2초마다만 넘겨도 됨."""
     def hold_targets(self, present: dict[int, int]) -> dict[int, int]
     def recover(self, present: dict[int, int], load: dict[int, int]) -> tuple[bool, str]
@@ -77,7 +96,7 @@ class Reflex:
 
 - `examples/run_waypoints.py`(예정): 관절 read + Present_Load → `reflex.update` → REFLEX면 `joint.command()`로 홀드 후
   키 입력 대기(`r` 복구 / `q` 종료), STOPPED면 토크 해제 후 종료.
-- `cookbook/08_move_joint.py`: 같은 방식. **리플렉스 1차 시험은 여기서** — 리더 암 불필요.
+- `cookbook/1_setup/140_move_joint.py`: 같은 방식. **리플렉스 1차 시험은 여기서** — 리더 암 불필요.
 - pairs는 yaml `joints`의 dual 항목에서 만든다. mode 변화와 Trip은 stderr에 시각과 함께 출력.
 
 ## 7. 테스트 (tests/test_reflex.py, 가짜 데이터, pytest)
@@ -93,7 +112,7 @@ class Reflex:
 
 ## 8. 하드웨어 튜닝 절차 (Kimi가 실행 후 TODO.md에 수치 기록)
 
-1. `08_move_joint --joint J4 --torque-limit 150` 왕복 10회: 오탐 0이어야 함. 오탐 나면 sat_ratio↑ 또는 t_accel↑.
+1. `cookbook/1_setup/140_move_joint.py --joint J4 --torque-limit 150` 왕복 10회: 오탐 0이어야 함. 오탐 나면 sat_ratio↑ 또는 t_accel↑.
 2. 같은 조건에서 손으로 잡기: 0.3~0.6 s 안에 COLLISION, 홀드 후 손을 놓아도 움직이지 않음, `r`로 복구.
 3. J2(듀얼)에서 반복 + 미러 모터 케이블을 뽑아 PAIR_MISMATCH 확인(토크 OFF 상태에서 뽑을 것).
 4. 사람 근처 시험은 캡 ≤ 300‰.

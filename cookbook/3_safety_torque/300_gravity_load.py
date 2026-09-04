@@ -11,14 +11,14 @@ Present_Load는 모터 출력 듀티(‰)라서, 정지 자세를 유지할 때�
 듀얼 모터 관절(J2: 10,11 / J3: 15,16)은 두 ID를 함께 지정해 동시에 홀드시킨다.
 
 예시:
-    python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 19
-    python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 15,16 --save
+    python cookbook/3_safety_torque/300_gravity_load.py --port /dev/ttyACM0 --ids 19
+    python cookbook/3_safety_torque/300_gravity_load.py --port /dev/ttyACM0 --ids 15,16 --save
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import math
@@ -127,7 +127,7 @@ def main() -> None:
         shared = max(rec.values())
         rec = dict.fromkeys(ids, shared)
         print(f"듀얼 쌍 공통 권장: {shared}‰ (분담이 뒤바뀔 수 있어 최댓값으로 통일)")
-    print("검증: python cookbook/02_move_position.py --id <ID> --goal <목표> --torque-limit <권장값>")
+    print("검증: python cookbook/1_setup/130_move_position.py --id <ID> --goal <목표> --torque-limit <권장값>")
 
     if args.save:
         path = Path(args.calibration)

@@ -125,6 +125,23 @@ class GravityModel:
         g = pin.computeGeneralizedGravity(self.model, self.data, self._build_q(q_rad))
         return {name: float(g[iv]) for name, (_, iv, _) in self._jidx.items()}
 
+    def rnea(self, q_rad: dict[str, float],
+             v_rad: dict[str, float] | None = None) -> dict[str, float]:
+        """RNEA 역동학 토크 [N·m] = M(q)a + C(q,v)v + G(q), a=0 고정.
+
+        v_rad(관절 각속도 [rad/s])를 생략/None으로 두면 정지 가정 — G(q)와 동일해진다.
+        외력 관측기(model/estimation.py)의 모델 항으로 쓴다.
+        """
+        import numpy as np
+        import pinocchio as pin
+
+        v = np.zeros(self.model.nv)
+        for name, vel in (v_rad or {}).items():
+            _, iv, _ = self._jidx[name]
+            v[iv] = vel
+        tau = pin.rnea(self.model, self.data, self._build_q(q_rad), v, np.zeros(self.model.nv))
+        return {name: float(tau[iv]) for name, (_, iv, _) in self._jidx.items()}
+
     def extra_load_torque(self, q_rad: dict[str, float], mass: float,
                           link: str = "flange") -> dict[str, float]:
         """링크 원점(flange 기본)에 매단 추加重량[mass kg]이 각 관절에 거는 토크 [N·m].

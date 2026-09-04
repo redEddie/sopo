@@ -9,13 +9,13 @@ J1처럼 한 바퀴 넘게 도는 관절의 허용 범위를 정할 때 쓴다. 
 감지해 바퀴 수를 더해 연속 각도를 만든다. 사용자가 셀 필요 없다.
 
 예시:
-    python cookbook/09_continuous_angle.py --port /dev/ttyACM0 --id 1
+    python cookbook/2_pose_calibration/210_continuous_angle.py --port /dev/ttyACM0 --id 1
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

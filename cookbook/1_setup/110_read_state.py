@@ -2,13 +2,13 @@
 """토크를 켜지 않고 지정된 모터의 상태를 10Hz로 읽어 출력한다.
 
 예시:
-    python cookbook/01_read_state.py --port /dev/ttyACM0 --ids 1,2,3
+    python cookbook/1_setup/110_read_state.py --port /dev/ttyACM0 --ids 1,2,3
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

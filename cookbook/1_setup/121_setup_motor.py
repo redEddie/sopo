@@ -5,14 +5,14 @@
 반드시 "그 시점에 모터가 응답하는 ID/보드레이트"로 보내야 한다.
 
 예시:
-    python cookbook/04_setup_motor.py --port /dev/ttyACM0 --new-id 2
-    python cookbook/04_setup_motor.py --port /dev/ttyACM0 --current-id 1 --new-id 2 --new-baud 500000
+    python cookbook/1_setup/121_setup_motor.py --port /dev/ttyACM0 --new-id 2
+    python cookbook/1_setup/121_setup_motor.py --port /dev/ttyACM0 --current-id 1 --new-id 2 --new-baud 500000
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 

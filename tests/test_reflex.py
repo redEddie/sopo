@@ -216,3 +216,86 @@ def test_pushed_away_from_goal_is_collision():
     for i in range(20):
         trips += r.update(now=i * 0.02, present={19: 2000 - 3 * i}, goal={19: 2000}, load={19: -150})
     assert [t.event for t in trips] == [Event.COLLISION] and "pushed back" in trips[0].detail
+
+
+def test_external_force_trips_after_persistence():
+    """τ_ext가 trip 임계를 t_ext 이상 넘으면 EXTERNAL_FORCE 1회 트립 (래칭, 중복 없음)."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.3))
+    base = dict(present={11: 1000}, goal={11: 1000}, load={11: 0})
+    ext = {"J2": 1.5}
+    m = {"J2": 11}
+    assert r.update(now=0.0, **base, ext_torque=ext, ext_joint_motor=m) == []
+    assert r.update(now=0.1, **base, ext_torque=ext, ext_joint_motor=m) == []
+    trips = r.update(now=0.35, **base, ext_torque=ext, ext_joint_motor=m)
+    assert [t.event for t in trips] == [Event.EXTERNAL_FORCE]
+    assert trips[0].motor_id == 11 and r.mode is Mode.REFLEX
+    # 래칭: 계속 넣어도 중복 트립 없음 (REFLEX에서는 신규 판정 자체를 안 함)
+    assert r.update(now=0.5, **base, ext_torque=ext, ext_joint_motor=m) == []
+
+
+def test_external_force_short_spike_ignored():
+    """t_ext 미만의 스파이크는 무시되고, 사라지면 타이머도 리셋된다."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.3))
+    m = {"J2": 11}
+    base = dict(present={11: 1000}, goal={11: 1000}, load={11: 0})
+    r.update(now=0.0, **base, ext_torque={"J2": 1.5}, ext_joint_motor=m)
+    assert r.update(now=0.1, **base, ext_torque={"J2": 0.0}, ext_joint_motor=m) == []   # 사라짐 → 리셋
+    assert r.update(now=0.4, **base, ext_torque={"J2": 1.5}, ext_joint_motor=m) == []   # 타이머 재시작
+    assert r.update(now=0.6, **base, ext_torque={"J2": 1.5}, ext_joint_motor=m) == []   # 0.2s < t_ext
+    assert r.mode is Mode.MOVE
+
+
+def test_external_force_warn_band_only():
+    """warn~trip 사이는 경고만 쌓이고 트립하지 않는다."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(ext_warn_nm=0.3, ext_trip_nm=1.0, t_ext=0.3))
+    m = {"J2": 11}
+    base = dict(present={11: 1000}, goal={11: 1000}, load={11: 0})
+    for k in range(5):
+        assert r.update(now=0.1 * k, **base, ext_torque={"J2": 0.5}, ext_joint_motor=m) == []
+        assert any("J2" in w for w in r.warnings())
+    assert r.mode is Mode.MOVE
+
+
+def test_external_force_gated_while_moving():
+    """사이클당 ext_motion_ticks 이상 움직이는 동안은 타이머가 리셋되어 트립하지 않는다."""
+    # accel_step을 크게 잡아 목표 추종에 의한 deferral은 끄고, 위치 변화 게이팅만 본다
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.3, ext_motion_ticks=40, accel_step=1000))
+    m = {"J2": 11}
+    trips = []
+    for k in range(30):  # 0.6s 동안 매 사이클 50틱 이동, τ_ext는 계속 초과
+        pos = 1000 + 50 * k
+        trips += r.update(now=0.02 * k, present={11: pos}, goal={11: pos}, load={11: 0},
+                          ext_torque={"J2": 1.5}, ext_joint_motor=m)
+    assert trips == [] and r.mode is Mode.MOVE
+    # 정지하면 타이머가 진행되어 트립
+    pos = 1000 + 50 * 29
+    trips = []
+    for k in range(30, 50):
+        trips += r.update(now=0.02 * k, present={11: pos}, goal={11: pos}, load={11: 0},
+                          ext_torque={"J2": 1.5}, ext_joint_motor=m)
+    assert [t.event for t in trips] == [Event.EXTERNAL_FORCE]
+
+
+def test_external_force_gated_during_accel_deferral():
+    """목표 급변 직후(t_accel)에는 τ_ext 초과가 지속돼도 타이머가 안 잡힌다."""
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.2, accel_step=40, t_accel=0.5,
+                                           ext_motion_ticks=1000))  # 위치 게이트는 무력화
+    m = {"J2": 11}
+    ext = {"J2": 1.5}
+    r.update(now=0.0, present={11: 1000}, goal={11: 1000}, load={11: 0}, ext_torque=ext, ext_joint_motor=m)
+    # 목표 급변 → deferral 시작 (~0.55). 타이머는 리셋.
+    r.update(now=0.05, present={11: 1000}, goal={11: 1060}, load={11: 0}, ext_torque=ext, ext_joint_motor=m)
+    assert r.update(now=0.4, present={11: 1000}, goal={11: 1060}, load={11: 0}, ext_torque=ext, ext_joint_motor=m) == []
+    # deferral 종료 후 타이머 재시작 → t_ext 전엔 안 뜸
+    assert r.update(now=0.7, present={11: 1000}, goal={11: 1060}, load={11: 0}, ext_torque=ext, ext_joint_motor=m) == []
+    assert r.update(now=0.85, present={11: 1000}, goal={11: 1060}, load={11: 0}, ext_torque=ext, ext_joint_motor=m) == []
+    trips = r.update(now=0.95, present={11: 1000}, goal={11: 1060}, load={11: 0}, ext_torque=ext, ext_joint_motor=m)
+    assert [t.event for t in trips] == [Event.EXTERNAL_FORCE]
+
+
+def test_external_force_none_disabled():
+    """ext_torque=None(관측기 없음)이면 판정 비활성 — 기존 호출과 동일하게 동작."""
+    r = Reflex(LIMITS, PAIRS)
+    for k in range(40):
+        assert r.update(now=0.02 * k, present={11: 1000}, goal={11: 1000}, load={11: 0}) == []
+    assert r.mode is Mode.MOVE

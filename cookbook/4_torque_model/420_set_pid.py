@@ -5,14 +5,14 @@ Feetech STS 기본값 P=32 D=32 I=0. P를 올리면 캡 안에서 강성이 오�
 한 관절씩 바꾸고 07/jog로 진동·소음을 확인한다. 값은 EPROM이라 전원을 꺼도 유지된다.
 
 예시:
-    python cookbook/15_set_pid.py --port /dev/ttyACM0 --ids 19,20,21                    # 읽기
-    python cookbook/15_set_pid.py --port /dev/ttyACM0 --ids 19 --p 48 --d 48            # 쓰기
+    python cookbook/4_torque_model/420_set_pid.py --port /dev/ttyACM0 --ids 19,20,21                    # 읽기
+    python cookbook/4_torque_model/420_set_pid.py --port /dev/ttyACM0 --ids 19 --p 48 --d 48            # 쓰기
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 

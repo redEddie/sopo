@@ -78,7 +78,7 @@ class FeetechBus:
             still_on = self.torque_off_verified(disable_torque_ids)
             if still_on:
                 import sys
-                print(f"!!! torque-off NOT VERIFIED for motors {still_on} (broadcast off was sent) - check with: python cookbook/11_torque_off.py", file=sys.stderr)
+                print(f"!!! torque-off NOT VERIFIED for motors {still_on} (broadcast off was sent) - check with: python cookbook/1_setup/150_torque_off.py", file=sys.stderr)
         self.port.closePort()
         try:
             fcntl.flock(self._lock_fd, fcntl.LOCK_UN)

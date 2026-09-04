@@ -23,7 +23,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="sopo daemon client")
     parser.add_argument("--host", default="127.0.0.1")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    for c in ("status", "watch", "move", "idle", "guiding", "recover", "init", "shutdown"):
+    for c in ("status", "watch", "move", "idle", "guiding", "recover", "init", "shutdown", "tare_ext"):
         sub.add_parser(c)
     g = sub.add_parser("goto"); g.add_argument("targets", nargs="+", help="J2=1200 J3=2500 ...")
     g.add_argument("--no-wait", action="store_true", help="return right after the command is accepted")

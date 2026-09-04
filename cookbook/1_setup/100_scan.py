@@ -5,13 +5,13 @@
 기본은 ID 0~30만 스캔하며, 필요하면 --max-id 253으로 전체를 검색한다.
 
 예시:
-    python cookbook/00_scan.py --port /dev/ttyACM0
+    python cookbook/1_setup/100_scan.py --port /dev/ttyACM0
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 

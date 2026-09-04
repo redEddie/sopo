@@ -6,13 +6,13 @@ Phase B: 왕복을 계속하며 "관절을 손으로 잡으세요" → COLLISION
          홀드 후 손을 놓아도 움직이지 않는지 확인, [r] 복구 → 재개되는지 확인.
 
 예시:
-    python cookbook/14_reflex_check.py --config configs/arm.yaml --joint J4 --delta 300 --cycles 10
+    python cookbook/3_safety_torque/330_reflex_check.py --config configs/arm.yaml --joint J4 --delta 300 --cycles 10
 """
 
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 import argparse
 import time

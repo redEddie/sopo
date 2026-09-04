@@ -32,7 +32,8 @@ sopo/            핵심 패키지 — 층별 서브패키지 구조 (공개 API�
                  control.py(다관절 안전 제어 루프: 클램프 → 명령 → reflex → 홀드/복구)
   safety/        limits.py(SafetyLimits + 토크 제한/과부하 보호/소프트 리밋/스텝 클램핑),
                  reflex.py(호스트 측 충돌 리플렉스: 포화+정체 → 홀드 래칭, recover)
-  model/         dynamics.py(URDF 기반 중력/외력 토크 GravityModel — 관절↔모터 매핑은 arm.yaml에서 유도)
+  model/         dynamics.py(URDF 기반 중력/외력 토크 GravityModel — 관절↔모터 매핑은 arm.yaml에서 유도),
+                 estimation.py(토크 기반 외력 관측기 ExternalTorqueEstimator: 잔차 LPF + deadband + tare)
   runtime/       daemon.py(**sopod** — 버스를 독점하는 하위 제어기 데몬: 50Hz 루프 + reflex + 워치독, ZMQ 상태/명령/액션),
                  client.py(SopoClient: 상태 구독 · 명령 · 액션 스트림 — 정책/조그/GUI는 이걸로만 접근),
                  cli.py(python -m sopo.runtime.cli status|watch|move|idle|guiding|recover|init|goto|shutdown),
@@ -40,8 +41,8 @@ sopo/            핵심 패키지 — 층별 서브패키지 구조 (공개 API�
                  sources.py(명령 소스 경계 (lerobot Teleoperator 구조): WaypointSource/JogSource + 리더 암/정책 플레이스홀더)
   config.py      arm.yaml/calibration.yaml 로더
   keys.py        터미널 키 입력 (jog)
-cookbook/        Feetech 기초 조작 쿡북 — README.md 참조
-                   (스캔 → 상태 읽기 → 이동 → 토크 제한 → ID 설정 → 위치 한계 실측 → 자중 토크 실측)
+cookbook/        주제별 학습 경로 쿡북 (1_setup → 2_pose_calibration → 3_safety_torque → 4_torque_model)
+                   폴더 번호 순서대로 따라가면 조립 직후부터 토크 모델 튜닝까지 진행 — README.md 참조
 examples/
   init.py          초기화: 자가진단(관절별 2.6° 왕복) → 연속 관절 home 확정 → standby_pose 대기
   run_waypoints.py 다관절 웨이포인트 주행 (안전 루프의 첫 클라이언트)
@@ -61,37 +62,37 @@ description/     로봇 모델 (URDF) — Onshape export + 후처리 파이프�
 
 ```bash
 # 1. 버스에 뭐가 붙어있는지 확인
-python cookbook/00_scan.py --port /dev/ttyACM0
+python cookbook/1_setup/100_scan.py --port /dev/ttyACM0
 
 # 2. 토크 끈 채로 상태 모니터링
-python cookbook/01_read_state.py --port /dev/ttyACM0 --ids 1,2,3,4,5,6,7
+python cookbook/1_setup/110_read_state.py --port /dev/ttyACM0 --ids 1,2,3,4,5,6,7
 
 # 3. 토크 제한 걸고 한 관절 이동
-python cookbook/02_move_position.py --port /dev/ttyACM0 --id 1 --goal 2048
+python cookbook/1_setup/130_move_position.py --port /dev/ttyACM0 --id 1 --goal 2048
 
 # 4. (필요시) 모터 ID 변경
-python cookbook/04_set_motor_id.py --port /dev/ttyACM0 --current-id 1 --new-id 2
+python cookbook/1_setup/120_set_motor_id.py --port /dev/ttyACM0 --current-id 1 --new-id 2
 
 # 5. 관절별 위치 한계·자중 토크 실측 (손으로 움직여 기록)
-python cookbook/05_find_limits.py --port /dev/ttyACM0 --ids 19
-python cookbook/06_gravity_load.py --port /dev/ttyACM0 --ids 19 --save
+python cookbook/2_pose_calibration/200_find_limits.py --port /dev/ttyACM0 --ids 19
+python cookbook/3_safety_torque/300_gravity_load.py --port /dev/ttyACM0 --ids 19 --save
 
 # 6. 관절 단위 이동 + 리플렉스 (설정: configs/arm.yaml — 이 암의 정의, 커밋됨)
-python cookbook/08_move_joint.py --config configs/arm.yaml --joint J4 --goal 2300 --torque-limit 150
+python cookbook/1_setup/140_move_joint.py --config configs/arm.yaml --joint J4 --goal 2300 --torque-limit 150
 
 # 7. 다관절 웨이포인트 주행 (리플렉스 포함)
 python examples/run_waypoints.py --config configs/arm.yaml --waypoints configs/waypoints.example.yaml --verbose
 
 # 7.5 초기화: 자가진단 후 standby_pose(arm.yaml)로 이동해 대기 — 제어 세션 시작 전 루틴
-python cookbook/13_capture_pose.py --config configs/arm.yaml   # 토크 OFF로 자세 만든 뒤 1회: standby_pose 기록
+python cookbook/2_pose_calibration/220_capture_pose.py --config configs/arm.yaml   # 토크 OFF로 자세 만든 뒤 1회: standby_pose 기록
 python examples/init.py --config configs/arm.yaml
 
 # 8. 키보드 조그 (←/→ 이동, ↑/↓ 관절, space 홀드, q 종료)
 python examples/jog.py --config configs/arm.yaml
 
 # 9. 캡·리밋을 모터 EPROM에 영구화 (전원 켜는 순간부터 캡 적용)
-python cookbook/10_persist_caps.py --config configs/arm.yaml --dry-run
-python cookbook/10_persist_caps.py --config configs/arm.yaml
+python cookbook/3_safety_torque/320_persist_caps.py --config configs/arm.yaml --dry-run
+python cookbook/3_safety_torque/320_persist_caps.py --config configs/arm.yaml
 ```
 
 ## sopod — 하위 제어기 데몬 (Franka의 Control box + FCI 포지션)
@@ -131,6 +132,11 @@ REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가
 액션 스트림이 0.5초 끊기면 **그 순간의 위치를 목표로 고정**해 홀드한다(끌려가지 않음). 데몬은 시작할 때 토크를 건드리지 않는다 —
 이전 세션이 홀드로 끝났으면 REFLEX(`INHERITED_HOLD`)로 이어받아 `recover`/`idle`을 기다린다.
 
+외력 관측기(pinocchio + `configs/calibration.yaml`의 gravity 보정이 있을 때 자동 활성): 상태 스트림의
+`ext_torque` 필드에 관절별 외력 토크 추정치[N·m]가 실린다 — 잔차 `LPF(측정 토크 − RNEA(q,q̇))`라 자중은 빠진 순수 외력이다.
+0.3 N·m 넘으면 경고, 1.0 N·m가 0.3초 지속되면 EXTERNAL_FORCE 리플렉스. `tare_ext` 명령은 현재 잔차를 0점으로 저장해
+듀얼 preload·마찰 같은 정류 바이어스를 제거한다 (예: `python -m sopo.runtime.cli tare_ext`).
+
 ## 안전 설계
 
 토크를 켜는 모든 코드는 반드시 `apply_safety()`를 먼저 호출한다. 3중 안전 계층:
@@ -148,9 +154,9 @@ REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가
 
 자가진단 실패·리플렉스·통신 오류·데몬/스크립트 종료 등 **모든 소프트웨어 결함은 홀드**다: 목표=현재로 굳히고
 `Torque_Limit`을 홀드 캡(600‰)으로 올려 빳빳하게 유지한다 (ISO 10218-1 safety-rated monitored stop, Franka reflex와 동일).
-토크를 끄는 것(Cat 0)은 `idle`/`guiding` 명령, `cookbook/11_torque_off.py`, 스크립트의 `--release`뿐이다 —
+토크를 끄는 것(Cat 0)은 `idle`/`guiding` 명령, `cookbook/1_setup/150_torque_off.py`, 스크립트의 `--release`뿐이다 —
 쥔 물건을 떨어뜨리거나 팔 아래의 사람·물체를 치는 "예상치 못한 낙하"를 없애기 위해서다.
-EPROM `Max_Torque_Limit`은 상한 600‰(`10_persist_caps`), 운용 캡(200~400‰)은 `apply_safety()`가 RAM에 쓴다.
+EPROM `Max_Torque_Limit`은 상한 600‰(`cookbook/3_safety_torque/320_persist_caps.py`), 운용 캡(200~400‰)은 `apply_safety()`가 RAM에 쓴다.
 서보 홀드는 브레이크가 아니라 능동 토크라 발열이 있고 홀드 캡을 넘는 힘에는 밀린다; 물리 E-stop(#5)은 표준대로 전원 차단(Cat 0)이다.
 
 ### 토크 제한 단위

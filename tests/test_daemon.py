@@ -209,3 +209,37 @@ def test_daemon_adopts_held_arm_at_start(monkeypatch):
     assert c.command("recover")["ok"] and d.mode.value == "move"
     c.command("shutdown"); t.join(timeout=3)
 
+
+def test_ext_torque_in_state_and_tare(monkeypatch):
+    """config_path를 주면 외력 관측기가 붙는다: state에 ext_torque, tare_ext 명령 동작."""
+    pytest.importorskip("pinocchio", reason="pinocchio 미설치")
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6585, "cmd": 6586, "action": 6587}
+    arm = pathlib.Path(__file__).resolve().parents[1] / "configs" / "arm.yaml"
+    d = daemon_mod.Daemon(CFG, ports, config_path=str(arm))
+    assert d.estimator is not None
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.runtime.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    s = c.state(1.0)
+    assert s and set(s["ext_torque"]) == {"J1", "J2", "J4"}  # CFG의 관절만 (모델은 6관절)
+    r = c.command("tare_ext")
+    assert r["ok"] and "J2" in r["biases"]
+    c.command("shutdown"); t.join(timeout=3)
+
+
+def test_estimator_absent_without_config_path(monkeypatch):
+    """config_path가 없으면 estimator=None이어도 데몬 정상 (기존 동작 회귀 확인)."""
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6595, "cmd": 6596, "action": 6597}
+    d = daemon_mod.Daemon(CFG, ports)
+    assert d.estimator is None
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.runtime.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    s = c.state(1.0)
+    assert s["ext_torque"] == {}
+    assert c.command("tare_ext")["ok"] is False
+    assert c.command("move")["ok"] and d.mode.value == "move"
+    c.command("shutdown"); t.join(timeout=3)
+
