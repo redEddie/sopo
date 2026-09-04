@@ -59,6 +59,9 @@ joints:
 safety:
   # 정격(스톨) 토크 대비 천분율. 300 = 30%. 사람 근처에서는 400을 넘기지 말 것.
   torque_limit: 300
+  # 전력 모드 캡: 페이로드 안전망(추정기 + estimation floor/k + 세션 tare 완료)이 서 있을 때만
+  # 이 값으로 상향한다. EPROM 상한(600, 320_persist_caps로 기록)을 넘기지 말 것.
+  power_torque_limit: 600
   # 가속도 레지스터 (약 8.7deg/s^2 단위). 낮을수록 부드럽게 출발/정지 — 흔들림이 크면 10~15로.
   acceleration: 30
   # 제어 주기당 목표 위치 최대 변화량 (틱) = 최고 속도 (80 @50Hz ≈ 350°/s). 흔들림이 크면 40으로.
@@ -68,7 +71,7 @@ safety:
   max_position: 3896
   # 관절별 소프트 리밋 오버라이드 (모터 ID: [min, max])
   position_limits: {}
-  # 관절별 토크 캡 오버라이드 (모터 ID: 천분율)
+  # 관절별 토크 캡 오버라이드 (모터 ID: 천분율). 순한 모드 전용 — 전력 모드에서는 균일 캡.
   torque_limits: {}
   # 외력 감지 (model/estimation.py — 정착 상태에서만 판정). 관절 토크 N·m 기준.
   # ext_warn_nm: 초과 시 상태 스트림/로그 통지만. ext_trip_nm: t_ext초 지속 시 REFLEX 홀드.
@@ -79,7 +82,12 @@ safety:
   #   position_limits: {19: [500, 3500]}
   #   torque_limits: {1: 150, 21: 150}
 
-# 실측값은 configs/calibration.yaml에 따로 저장된다 (cookbook/2_pose_calibration/200_find_limits.py / cookbook/3_safety_torque/300_gravity_load.py).
+# 최대 페이로드 선언 [kg] — 쿡북 cookbook/3_safety_torque/350_define_payload.py만이 이 값을 기록한다.
+# 0이면 페이로드 안전망(자세 의존 동적 임계 포락선) 비활성 — 고정 임계(ext_trip_nm)로 폴백.
+payload:
+  max_kg: 0.0
+
+# 실측값은 configs/calibration.yaml에 따로 저장된다 (200_find_limits / 300_gravity_load / 340_estimator_limits 등 쿡북).
 # 실행 스크립트는 이 파일이 같은 폴더에 있으면 위 safety 값 위에 덮어씌워 적용한다.
 
 rate_hz: 50

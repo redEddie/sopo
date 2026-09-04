@@ -193,3 +193,17 @@ def test_load_gravity_cal_tmp_yaml():
     empty = load_gravity_cal(d / "nonexistent.yaml")
     assert empty.zero_ticks == {} and empty.dir == {} and empty.scale == {}
 
+
+def test_load_estimation_limits():
+    """calibration.yaml estimation 섹션 로드: floor 맵 + k. 없으면 ({}, None)."""
+    from sopo.config import load_estimation_limits
+    d = pathlib.Path(tempfile.mkdtemp())
+    p = d / "calibration.yaml"
+    p.write_text(yaml.safe_dump({"estimation": {"floor": {"J2": 0.4, "J3": 0.35}, "k": 1.6}}))
+    floor, k = load_estimation_limits(p)
+    assert floor == {"J2": 0.4, "J3": 0.35} and k == 1.6
+    # 섹션/파일 없으면 비활성 기본값
+    assert load_estimation_limits(d / "nonexistent.yaml") == ({}, None)
+    p.write_text(yaml.safe_dump({"gravity": {"zero_ticks": {"J2": 2012}}}))
+    assert load_estimation_limits(p) == ({}, None)
+

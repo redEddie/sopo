@@ -136,6 +136,7 @@ class Reflex:
         comm_ok: bool = True,
         ext_torque: dict[str, float] | None = None,
         ext_joint_motor: dict[str, int] | None = None,
+        ext_limit: dict[str, float] | None = None,
     ) -> list[Trip]:
         """Evaluate one control cycle and return any new trips."""
         self._warnings.clear()
@@ -307,6 +308,7 @@ class Reflex:
 
         # EXTERNAL_FORCE: 모델 잔차 τ_ext가 임계 초과 지속 (자중은 모델이 빼주므로 순수 외력만 남는다).
         # 이동 중(목표 급변 직후 또는 사이클당 위치 변화 큼)에는 잔차가 불신뢰라 타이머를 리셋한다.
+        # ext_limit이 주어지면 관절별 동적 임계(페이로드 포락선, docs/payload-safety-requirements.md 3.1)를 쓴다.
         if self._mode is not Mode.REFLEX and ext_torque:
             for name, tau in ext_torque.items():
                 mid = (ext_joint_motor or {}).get(name)
@@ -319,17 +321,19 @@ class Reflex:
                 if pos is not None:
                     self._ext_prev_pos[name] = pos
                 mag = abs(tau)
-                if moving or mag <= self._cfg.ext_warn_nm:
+                trip_nm = ext_limit.get(name, self._cfg.ext_trip_nm) if ext_limit else self._cfg.ext_trip_nm
+                warn_nm = min(self._cfg.ext_warn_nm, trip_nm * 0.3)  # 동적 임계가 낮으면 경고도 비례해 낮춘다
+                if moving or mag <= warn_nm:
                     self._ext_start.pop(name, None)
                     continue
-                if mag <= self._cfg.ext_trip_nm:
-                    self._warnings.append(f"{name} external torque {tau:+.2f} N·m (warn {self._cfg.ext_warn_nm})")
+                if mag <= trip_nm:
+                    self._warnings.append(f"{name} external torque {tau:+.2f} N·m (warn {warn_nm:.2f})")
                     self._ext_start.pop(name, None)
                     continue
                 start = self._ext_start.setdefault(name, now)
                 if now - start >= self._cfg.t_ext:
                     trip = Trip(Event.EXTERNAL_FORCE, mid,
-                                f"{name} |τ_ext| {mag:.2f} N·m > {self._cfg.ext_trip_nm} for {now - start:.2f}s")
+                                f"{name} |τ_ext| {mag:.2f} N·m > thr {trip_nm:.2f} for {now - start:.2f}s")
                     new_trips.extend(self._emit(trip))
 
         return new_trips

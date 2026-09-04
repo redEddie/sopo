@@ -223,6 +223,10 @@ def test_ext_torque_in_state_and_tare(monkeypatch):
     c = SopoClient("127.0.0.1", ports)
     s = c.state(1.0)
     assert s and set(s["ext_torque"]) == {"J1", "J2", "J4"}  # CFG의 관절만 (모델은 6관절)
+    # FR-9: 토크 OFF(IDLE)에서는 tare 거부 — MOVE 정착 상태에서만 허용
+    assert c.command("tare_ext")["ok"] is False
+    assert c.command("move")["ok"]
+    time.sleep(0.3)  # 정착 대기 (soft start 해제 + goal==present)
     r = c.command("tare_ext")
     assert r["ok"] and "J2" in r["biases"]
     c.command("shutdown"); t.join(timeout=3)
@@ -280,4 +284,103 @@ def test_goto_degree_without_calibration(monkeypatch):
     assert r["ok"] is False and "230_calibrate_zero" in r["error"]
     r = c.command("goto", action={"J4": 2500})  # ticks는 여전히 동작
     assert r["ok"]
+    c.command("shutdown"); t.join(timeout=3)
+
+
+def _payload_configs(tmp):
+    """repo의 configs를 tmp로 복사하고 estimation 섹션(floor/k) + payload 선언을 추가한다."""
+    import shutil
+    import yaml
+    repo = pathlib.Path(__file__).resolve().parents[1] / "configs"
+    shutil.copy(repo / "arm.yaml", tmp / "arm.yaml")
+    cal = yaml.safe_load((repo / "calibration.yaml").read_text())
+    cal["estimation"] = {"floor": {"J1": 0.2, "J2": 0.4, "J4": 0.2}, "k": 1.6}
+    (tmp / "calibration.yaml").write_text(yaml.safe_dump(cal))
+    arm = yaml.safe_load((tmp / "arm.yaml").read_text())
+    arm["payload"] = {"max_kg": 0.5}
+    (tmp / "arm.yaml").write_text(yaml.safe_dump(arm))
+    return tmp / "arm.yaml"
+
+
+def test_payload_power_mode_interlock(monkeypatch, tmp_path):
+    """FR-7: floor/k + tare 완료 후에만 전력 캡(균일) 적용. 그 전엔 순한 캡(per-motor 오버라이드 포함)."""
+    pytest.importorskip("pinocchio", reason="pinocchio 미설치")
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6625, "cmd": 6626, "action": 6627}
+    cfg = dict(CFG)
+    cfg["safety"] = {**CFG["safety"], "torque_limits": {19: 150}}  # 순한 모드 per-motor 오버라이드
+    cfg["payload"] = {"max_kg": 0.5}                                # arm.yaml의 payload 섹션에 해당
+    arm = _payload_configs(tmp_path)
+    d = daemon_mod.Daemon(cfg, ports, config_path=str(arm))
+    assert d.estimator is not None and d._payload_active and not d.power_ok
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.runtime.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    assert c.command("move")["ok"]
+    assert d.bus.regs[(19, "Torque_Limit")] == 150            # 순한 모드: 오버라이드 적용
+    assert d.bus.regs[(11, "Torque_Limit")] == 200            # 나머지는 기본 캡
+    assert c.state(1.0)["power_ok"] is False
+    time.sleep(0.3)                                            # 정착
+    assert c.command("tare_ext")["ok"]                         # tare → 인터록 충족
+    assert d.power_ok and c.state(1.0)["power_ok"] is True
+    assert d.bus.regs[(19, "Torque_Limit")] == 150            # 캡은 토크 ON 시점에만 바뀐다
+    c.command("idle"); c.command("move")
+    assert d.bus.regs[(19, "Torque_Limit")] == 600            # 전력 모드: 균일 캡
+    assert d.bus.regs[(11, "Torque_Limit")] == 600
+    c.command("shutdown"); t.join(timeout=3)
+
+
+def test_payload_envelope_passed_to_reflex(monkeypatch, tmp_path):
+    """FR-2: 페이로드 활성이면 매 사이클 ext_limit(포락선)이 reflex.update에 전달된다."""
+    pytest.importorskip("pinocchio", reason="pinocchio 미설치")
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6635, "cmd": 6636, "action": 6637}
+    cfg = dict(CFG)
+    cfg["payload"] = {"max_kg": 0.5}
+    arm = _payload_configs(tmp_path)
+    d = daemon_mod.Daemon(cfg, ports, config_path=str(arm))
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.runtime.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    seen = []
+    orig = d.reflex.update
+    def spy(*a, **kw):
+        seen.append(kw.get("ext_limit"))
+        return orig(*a, **kw)
+    d.reflex.update = spy  # start() 이후 reflex는 교체되지 않으므로 여기서 감싼다
+    c.command("move"); time.sleep(0.4)
+    c.command("shutdown"); t.join(timeout=3)
+    delivered = [x for x in seen if x is not None]
+    assert delivered, "ext_limit가 한 번도 전달되지 않음"
+    last = delivered[-1]
+    assert {"J1", "J2", "J4"} <= set(last)
+    assert abs(last["J1"] - 0.2) < 1e-6    # 수직축은 extra≈0 → floor 그대로
+    assert 0.4 < last["J2"]                # floor 0.4 + |extra(q)|×1.6 (자세 의존)
+
+
+def test_auto_tare_on_settle_and_guard(monkeypatch):
+    """FR-8: 정착 에지에서 자동 tare. 큰 외력이 걸려 있으면 건너뛴다."""
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    ports = {"state": 6645, "cmd": 6646, "action": 6647}
+
+    class StubEst:
+        def __init__(self, ext): self._ext = ext; self.calls = 0
+        def update(self, *a, **k): return dict(self._ext)
+        def tare(self): self.calls += 1
+        @property
+        def biases(self): return {"J2": 0.1}
+
+    d = daemon_mod.Daemon(CFG, ports)   # config_path 없음 → payload 비활성 (floor/k 없음)
+    d.estimator = StubEst({})           # 잔차 0 → auto-tare 허용
+    t = threading.Thread(target=d.start, daemon=True); t.start(); time.sleep(0.5)
+    from sopo.runtime.client import SopoClient
+    c = SopoClient("127.0.0.1", ports)
+    c.command("move"); time.sleep(0.4)
+    assert d.estimator.calls >= 1 and d._tare_done          # 정착 에지에서 tare 됨
+    assert not d.power_ok                                    # floor/k 없으면 전력 모드 아님
+    # 큰 외력이 걸린 상태에서 새 정착 에지(이동→도착)를 만들면 건너뛴다
+    d.estimator._ext = {"J2": 5.0}
+    c.command("goto", action={"J4": 2300})
+    time.sleep(0.8)
+    assert d.estimator.calls == 1                            # 추가 tare 없음 (가드)
     c.command("shutdown"); t.join(timeout=3)

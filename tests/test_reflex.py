@@ -299,3 +299,39 @@ def test_external_force_none_disabled():
     for k in range(40):
         assert r.update(now=0.02 * k, present={11: 1000}, goal={11: 1000}, load={11: 0}) == []
     assert r.mode is Mode.MOVE
+
+
+def test_external_force_dynamic_limit_lower():
+    """ext_limit(페이로드 포락선)이 고정 임계보다 낮으면 그 값으로 트립한다 (FR-3)."""
+    base = dict(present={11: 1000}, goal={11: 1000}, load={11: 0})
+    ext = {"J2": 0.5}   # 고정 임계(1.0) 이하 → ext_limit 없으면 warn 대역
+    m = {"J2": 11}
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.3))
+    for k in range(5):
+        assert r.update(now=0.1 * k, **base, ext_torque=ext, ext_joint_motor=m) == []
+        assert r.warnings()  # 0.5 > warn 0.3 → 경고만
+    # 동적 임계 0.4를 주면 t_ext 지속 후 트립
+    r2 = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.3))
+    trips = []
+    for k in range(5):
+        trips += r2.update(now=0.1 * k, **base, ext_torque=ext, ext_joint_motor=m,
+                           ext_limit={"J2": 0.4})
+    assert [t.event for t in trips] == [Event.EXTERNAL_FORCE]
+    assert "0.40" in trips[0].detail  # detail에 실제 쓰인 임계 표시
+
+
+def test_external_force_dynamic_limit_higher():
+    """ext_limit이 고정 임계보다 높으면 그 값까지 관대해진다 (뻗은 자세의 의도된 부하)."""
+    base = dict(present={11: 1000}, goal={11: 1000}, load={11: 0})
+    ext = {"J2": 1.5}   # 고정 임계(1.0) 초과 → ext_limit 없으면 트립
+    m = {"J2": 11}
+    r = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.2))
+    trips = []
+    for k in range(6):  # 0.5s > t_ext
+        trips += r.update(now=0.1 * k, **base, ext_torque=ext, ext_joint_motor=m)
+    assert [t.event for t in trips] == [Event.EXTERNAL_FORCE]  # 폴백 확인 (기존 동작)
+    r2 = Reflex(LIMITS, PAIRS, ReflexConfig(ext_trip_nm=1.0, t_ext=0.2))
+    for k in range(6):
+        assert r2.update(now=0.1 * k, **base, ext_torque=ext, ext_joint_motor=m,
+                         ext_limit={"J2": 2.0}) == []
+    assert r2.mode is Mode.MOVE  # 포락선 안 → 관대 (경고는 나도 됨)

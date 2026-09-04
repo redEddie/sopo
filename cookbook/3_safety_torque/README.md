@@ -65,8 +65,44 @@ python cookbook/3_safety_torque/330_reflex_check.py --config configs/arm.yaml --
 
 Phase A: 손 대지 않고 왕복 10회 → 리플렉스 0건이면 합격(오탐 없음). Phase B: 왕복 중 관절을 손으로 잡음 → `[REFLEX] COLLISION …`이 0.5초 안에 뜨고, 홀드 후 손을 놓아도 밀지 않으며, `r`로 복구되면 합격. 실패 시 `ReflexConfig`(sat_ratio, t_collision, t_accel)나 캡을 조정한다. 블랙박스는 `logs/`에 남는다.
 
+## 페이로드 안전망 (340 → 350 → 360)
+
+수동 캡(30%) 중심에서 **능동 감지 중심**으로 안전 철학을 전환하는 파이프라인이다
+(설계: `docs/payload-safety-requirements.md`). 완료하면 sopod가 전력 모드(균일 상향 캡 +
+자세 의존 동적 임계)로 올라간다. 사전 조건: 2_pose_calibration의 230/231 + 4_torque_model의 410 --scale.
+
+### 340_estimator_limits.py — 추정기 오차 한계 실측 (~20분)
+
+```bash
+python cookbook/3_safety_torque/340_estimator_limits.py --phase floor          # 정지 잔차 바닥 (최소 3자세)
+python cookbook/3_safety_torque/340_estimator_limits.py --phase k --mass 0.5   # 알려진 추 5회 탈부착 → 복원률 → k
+```
+
+floor는 정지 잔차(노이즈+히스테리시스)의 |값| mean+3σ, k는 1/최저 복원률. 둘 다 `calibration.yaml`의
+`estimation` 섹션에 저장된다. Present_Load는 세션 간 감도 변동이 있으니 **월 1회 또는 하드웨어 변경 시 재실행**.
+
+### 350_define_payload.py — 최대 페이로드 선언 + 실현성 검사
+
+```bash
+python cookbook/3_safety_torque/350_define_payload.py 0.5     # kg. 버스 불필요 (순수 모델 계산)
+```
+
+자세 그리드(J2/J3 스윕)에서 최악 필요 duty를 계산해 전력 캡(`safety.power_torque_limit`, EPROM 상한)과 비교한다.
+초과면 거부(--force 없이 저장 안 함), 90% 넘으면 경고. 통과하면 `arm.yaml`의 `payload.max_kg`에 기록한다
+(이 스크립트만이 이 값을 기록한다). 포락선 미리보기도 출력한다.
+
+### 360_payload_check.py — 합격시험 (sopod 클라이언트)
+
+```bash
+python cookbook/3_safety_torque/360_payload_check.py     # sopod 실행 + power_ok 상태에서
+```
+
+Phase A: m_max 추를 매달고 유지 + 서서히 이동 → 트립 0이면 합격. Phase B: m_max×k 초과 추 →
+EXTERNAL_FORCE 트립 + 부착→REFLEX 지연 측정. PASS/FAIL을 출력한다.
+
 ## 완료 기준
 
 - 전 관절 `torque_limits`가 `calibration.yaml`에 기록되고 320으로 EPROM에 영구화됐다 (`--dry-run` 무경고).
 - 330의 Phase A 오탐 0건, Phase B 정지·홀드·복구 합격.
 - 사람 근처 운용 시 캡 ≤ 400‰를 지킨다. → `4_torque_model`로.
+- (페이로드 안전망) `estimation.floor`/`k` 기록 + 350 통과 + 360 양 Phase PASS → sopod 전력 모드.

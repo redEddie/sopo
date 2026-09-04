@@ -8,6 +8,7 @@ Starts in IDLE with torque off; torque is enabled only by an explicit command.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import queue
 import secrets
@@ -27,7 +28,7 @@ from ..motion.control import (ARRIVAL_TICKS, SOFT_START_STEP, Blackbox, clamp_jo
                               hold_joint_goals, motor_goals, read_joints, reflex_present_view)
 from ..motion.joints import ContinuousJoint, DualMotorJoint
 from ..safety.reflex import Mode as ReflexMode, Reflex, ReflexConfig
-from ..safety.limits import apply_safety, freeze, verify_eprom
+from ..safety.limits import SafetyLimits, apply_safety, freeze, verify_eprom
 from .sources import StreamSource
 from .startup import self_test
 
@@ -82,6 +83,20 @@ class Daemon:
             except Exception as e:
                 self._log(f"gravity calibration not loaded (degree goto disabled): {e}")
         self.estimator = self._new_estimator(config_path)
+        # 페이로드 안전망 (docs/payload-safety-requirements.md): arm.yaml payload.max_kg +
+        # calibration.yaml estimation{floor,k} + 추정기가 갖춰지면 자세 의존 동적 임계를 reflex에 준다.
+        self.payload_max_kg = float((cfg.get("payload") or {}).get("max_kg") or 0.0)
+        self.power_cap = int(self.cfg.get("safety", {}).get("power_torque_limit", 600))
+        self.floor: dict[str, float] = {}
+        self.k_est: float | None = None
+        if config_path:
+            try:
+                from ..config import load_estimation_limits
+                self.floor, self.k_est = load_estimation_limits(Path(config_path).parent / "calibration.yaml")
+            except Exception as e:
+                self._log(f"estimation limits not loaded (동적 임계 비활성): {e}")
+        self._tare_done = False   # FR-7 인터록: 이 세션에서 tare 1회 이상 완료해야 전력 모드
+        self.settled = False      # 최근 사이클의 정착 상태 (FR-8/FR-9가 참조)
         # Control lease: exclusive right to stream actions (Franka's control() session). Revoked on
         # REFLEX/STOPPED/idle so a client cannot keep driving without acknowledging the event.
         self.lease: dict | None = None
@@ -121,6 +136,26 @@ class Daemon:
         except Exception as e:
             self._log(f"external torque estimator disabled: {e}")
             return None
+
+    @property
+    def _payload_active(self) -> bool:
+        """동적 임계(포락선) 활성 조건 (FR-2): 추정기 + floor/k 실측 + 페이로드 선언."""
+        return (self.estimator is not None and self.payload_max_kg > 0.0
+                and bool(self.floor) and self.k_est is not None)
+
+    @property
+    def power_ok(self) -> bool:
+        """전력 모드 인터록 (FR-7): 추정기 + floor/k 실측 + 이 세션에서 tare 완료.
+        안전망이 서 있을 때만 힘을 푼다. 상태 스트림에도 표시."""
+        return self.estimator is not None and bool(self.floor) and self.k_est is not None and self._tare_done
+
+    def _motion_limits(self) -> SafetyLimits:
+        """토크 ON 때 적용할 캡: power_ok면 균일 전력 캡, 아니면 기존(순한) 설정.
+        per-motor 캘리브레이션 오버라이드는 순한 모드 전용 — 전력 모드에서는 균일 캡."""
+        if not self.power_ok:
+            return self.limits
+        cap = min(self.power_cap, self.limits.eprom_torque_ceiling)  # EPROM 상한을 넘기지 않는다
+        return dataclasses.replace(self.limits, torque_limit=cap, torque_limits={})
 
     def start(self) -> None:
         self.bus.connect()
@@ -185,6 +220,7 @@ class Daemon:
     def _loop(self) -> None:
         period = 1.0 / self.rate
         last_temp = last_volt = 0.0
+        prev_settled = False
         flagged: dict[tuple[int, str], float] = {}
         while self.running:
             t0 = time.monotonic()
@@ -247,12 +283,31 @@ class Daemon:
             settled = (self.mode is ArmMode.MOVE and not self.soft and self.goal
                        and all(abs(self.goal[n] - self.present.get(n, 0)) < ARRIVAL_TICKS
                                for n in self.goal))
+            self.settled = settled
+
+            # FR-2: 페이로드 포락선 임계를 매 사이클 계산해 reflex에 넘긴다 (FK 비용 µs).
+            # 비활성이면 None — reflex는 고정 임계로 폴백한다.
+            ext_limit = None
+            if self._payload_active and comm_ok and self.cal is not None:
+                try:
+                    q_now = {n: self.cal.q(n, self.raw_pos[r]) for n, r in self._ref_ids.items()
+                             if r in self.raw_pos}
+                    if q_now:
+                        ext_limit = self.estimator.model.payload_envelope(q_now, self.payload_max_kg,
+                                                                          self.k_est, self.floor)
+                except Exception as e:
+                    self._log(f"payload envelope error: {e}")
+
+            # FR-8: 정착 진입 에지에서 자동 tare (히스테리시스 바이어스를 계속 따라간다)
+            if settled and not prev_settled:
+                self._auto_tare()
+            prev_settled = settled
 
             if self.mode in (ArmMode.MOVE, ArmMode.REFLEX) and self.goal:
                 mg = motor_goals(self.joints, self.goal)
                 trips = self.reflex.update(t0, self.rp, mg, self.load, temps=temps, comm_ok=comm_ok,
                                            ext_torque=(self.ext or None) if settled else None,
-                                           ext_joint_motor=self._ref_ids)
+                                           ext_joint_motor=self._ref_ids, ext_limit=ext_limit)
                 for trip in trips:
                     line = describe_trip(trip, self.joints); self._log(line); self.last_trips = (self.last_trips + [line])[-5:]
                 for w in self.reflex.warnings():
@@ -315,12 +370,29 @@ class Daemon:
     # ---------------------------------------------------------------- commands
     def _set_torque(self, on: bool) -> None:
         if on:
-            apply_safety(self.bus, self.ids, self.limits)   # always before enabling
+            limits = self._motion_limits()              # power_ok면 균일 전력 캡 (FR-7)
+            apply_safety(self.bus, self.ids, limits)   # always before enabling
+            if limits is not self.limits:
+                self._log(f"전력 모드: 균일 캡 {limits.torque_limit}‰ (payload safety net armed)")
             self.bus.enable_torque(self.ids)
         else:
             still = self.bus.torque_off_verified(self.ids)
             if still:
                 self._log(f"!!! torque-off not verified for {still}")
+
+    def _auto_tare(self) -> None:
+        """정착 진입 시 잔차 0점 맞추기 (FR-8). 큰 외력이 걸려 있으면 건너뛴다 — 걸린 하중을 0점으로 삼는 사고 방지."""
+        if self.estimator is None:
+            return
+        big = {n: round(v, 3) for n, v in self.ext.items() if abs(v) >= self.reflex._cfg.ext_warn_nm}
+        if big:
+            self._log(f"auto-tare skipped: 외력 감지됨 {big} (걸린 하중을 0점으로 삼지 않기 위해)")
+            return
+        self.estimator.tare()
+        first = not self._tare_done
+        self._tare_done = True
+        suffix = " — payload safety net armed (다음 토크 ON부터 전력 캡)" if first and self.power_ok else ""
+        self._log(f"auto-tare: biases { {n: round(b, 3) for n, b in self.estimator.biases.items()} }{suffix}")
 
     def _enter_move(self) -> None:
         if self.reflex.mode in (ReflexMode.REFLEX, ReflexMode.STOPPED):
@@ -356,11 +428,15 @@ class Daemon:
         if cmd == "status":
             return {"ok": True, "state": self._state(0.0, 0.0)}
         if cmd == "tare_ext":
-            # 외력 관측기 0점 맞추기: 현재 잔차를 바이어스로 저장. 모드 무관하게 허용.
+            # 외력 관측기 0점 맞추기. 토크 ON 정착(MOVE + 정지) 상태에서만 허용 (FR-9) —
+            # 토크 OFF나 이동 중이면 잔차가 −G(q)나 과도응답으로 오염된다.
             # (cmd는 루프 스레드에서 드레인되므로 pinocchio 스레드 안전)
             if self.estimator is None:
                 return {"ok": False, "error": "external torque estimator not available (config_path/pinocchio/calibration 확인)"}
+            if not (self.mode is ArmMode.MOVE and self.settled):
+                return {"ok": False, "error": f"tare_ext는 MOVE 정착 상태에서만 허용 (mode={self.mode.value}, settled={self.settled})"}
             self.estimator.tare()
+            self._tare_done = True
             self._log(f"external torque tare: biases { {n: round(b, 3) for n, b in self.estimator.biases.items()} }")
             return {"ok": True, "biases": {n: round(b, 4) for n, b in self.estimator.biases.items()}}
         if cmd == "acquire":
@@ -405,7 +481,7 @@ class Daemon:
                     return {"ok": False, "error": reason}
             else:
                 self.reflex = self._new_reflex()
-            apply_safety(self.bus, self.ids, self.limits)  # back to motion caps
+            apply_safety(self.bus, self.ids, self._motion_limits())  # back to motion caps (power_ok면 전력 캡)
             self.stream.clear(); self.soft = True; self.mode = ArmMode.MOVE
             return {"ok": True, "mode": "move"}
         if cmd == "goto":
@@ -471,6 +547,7 @@ class Daemon:
             "lease": self.lease["name"] if self.lease else None,
             "joints": joints, "motors": {str(i): {"pos": self.rp.get(i), "load": self.load.get(i), "temp": self.temps.get(i)} for i in self.ids},
             "ext_torque": {n: round(v, 3) for n, v in self.ext.items()},
+            "power_ok": self.power_ok,
             "volt": list(self.volt), "cycle_ms": round(elapsed * 1e3, 2), "jitter_p99_ms": round(p99, 2), "trips": self.last_trips,
         }
 

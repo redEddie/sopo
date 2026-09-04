@@ -109,6 +109,19 @@ def load_gravity_cal(calibration_path: str | Path) -> GravityCal:
     )
 
 
+def load_estimation_limits(calibration_path: str | Path) -> tuple[dict[str, float], float | None]:
+    """calibration.yaml의 estimation 섹션 → (floor 맵 [N·m], k 여유율). 없으면 ({}, None).
+
+    floor/k는 쿡북 340_estimator_limits.py가 실측해 기록한다 (페이로드 포락선의 바닥/여유율).
+    """
+    path = Path(calibration_path)
+    data = yaml.safe_load(path.read_text()) if path.exists() else {}
+    est = (data or {}).get("estimation") or {}
+    floor = {str(n): float(v) for n, v in (est.get("floor") or {}).items()}
+    k = est.get("k")
+    return floor, (float(k) if k is not None else None)
+
+
 def make_gravity_model(arm_config_path: str | Path = "configs/arm.yaml",
                        urdf_path: str | Path | None = None) -> GravityModel:
     """arm.yaml joints + 스톨 테이블로 joint_map을 유도한 GravityModel을 만든다."""

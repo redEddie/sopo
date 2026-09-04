@@ -150,6 +150,13 @@ REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가
 
 사람 옆에서 돌릴 때는 `torque_limit`을 400(40%) 이하로 유지할 것.
 
+**전력 모드 + 능동 안전망** (docs/payload-safety-requirements.md): 쿡북 파이프라인(340 추정기 오차 실측 →
+350 최대 페이로드 선언 → 360 합격시험)을 마치고 tare까지 끝나면, sopod는 캡을 `safety.power_torque_limit`(기본 600‰,
+EPROM 상한 이하)로 올려 모터가 힘을 다 쓰게 한다. 대신 안전은 EXTERNAL_FORCE가 담당한다: 매 사이클
+자세 의존 임계 `thr_j(q) = |extra_load_torque_j(q, m_max)| × k + floor_j`를 넘는 외력이 0.3초 지속되면 REFLEX 홀드.
+인터록 조건(추정기+floor/k+tare)이 하나라도 빠지면 캡은 300‰ 순한 모드를 유지한다 — 캘리브레이션 미완료 팔은 자동 보호.
+전력 모드에서는 COLLISION(포화 기반)이 사실상 비활성이라 OVERTEMP·모터 내장 과부하 보호·EPROM 상한이 최후선이다.
+
 ### 정지 정책 — 결함 시 굳는다, 힘이 빠지지 않는다 (IEC 60204-1 Cat 2, [#10](https://github.com/redEddie/sopo/issues/10))
 
 자가진단 실패·리플렉스·통신 오류·데몬/스크립트 종료 등 **모든 소프트웨어 결함은 홀드**다: 목표=현재로 굳히고

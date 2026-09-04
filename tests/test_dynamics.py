@@ -179,3 +179,20 @@ def test_gravitycal_ticks_roundtrip():
     cal_neg = GravityCal(zero_ticks={"J2": 2012}, dir={"J2": -1}, scale={})
     assert cal_neg.ticks("J2", 90.0) == 2012 - 1024
     assert math.degrees(cal_neg.q("J2", cal_neg.ticks("J2", 33.0))) == pytest.approx(33.0, abs=0.1)  # 틱 해상도 0.088도
+
+
+def test_payload_envelope(gm):
+    """포락선 = |extra_load_torque(q, m_max)| × k + floor (docs/payload-safety-requirements.md 3.1)."""
+    # zero 자세에서 1kg의 J2 토크는 ~4.12 N·m (test_extra_load_torque 참조)
+    env = gm.payload_envelope(q(), 1.0, 1.6, {"J2": 0.3})
+    assert env["J2"] == pytest.approx(4.12 * 1.6 + 0.3, abs=0.5)
+    assert env["J1"] == pytest.approx(0.0, abs=1e-6)          # 수직축은 extra≈0, floor 없으면 0
+    # floor/k 없으면 순수 extra의 절댓값
+    env_plain = gm.payload_envelope(q(), 0.5, 1.0)
+    extra = gm.extra_load_torque(q(), 0.5)
+    for n in env_plain:
+        assert env_plain[n] == pytest.approx(abs(extra[n]))
+    # 자세가 바뀌면 포락선도 바뀐다 (자세 의존 임계)
+    env_folded = gm.payload_envelope(q(), 1.0, 1.6)
+    env_ext = gm.payload_envelope(q(J2=math.pi / 2), 1.0, 1.6)
+    assert abs(env_ext["J2"] - env_folded["J2"]) > 0.1

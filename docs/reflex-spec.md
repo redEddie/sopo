@@ -46,7 +46,25 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 게이팅: 목표 급변 직후(`accel_until`) 또는 사이클당 위치 변화 ≥ `ext_motion_ticks`(40틱)면 **이동 중**으로 보고
 타이머를 리셋한다 — 동역학 모델 오차가 커지는 구간이라 잔차를 믿지 않는다. `ext_torque=None`이면 비활성(기존 호출과 동일).
 REFLEX 모드에서는 신규 판정을 하지 않는다(기존 per-motor 루프와 동일한 조기 종료). 정류 바이어스(듀얼 preload·마찰·질량 오차)는
-관측기의 `tare()`로 제거한다 (데몬 명령 `tare_ext`).
+관측기의 `tare()`로 제거한다 (데몬 명령 `tare_ext`, MOVE 정착 상태에서만 허용 — FR-9).
+
+### 동적 임계 (페이로드 포락선, `ext_limit` — docs/payload-safety-requirements.md)
+
+수동 캡(30%) 대신 능동 감지로 안전을 담당하는 전력 모드의 판정 규칙. `update(..., ext_limit=)`에 관절별
+임계가 오면 고정 `ext_trip_nm` 대신 그 값을 쓴다 (없으면 기존 고정값 폴백). 경고 임계는 `min(ext_warn_nm, limit×0.3)`.
+
+```
+thr_j(q) = |extra_load_torque_j(q, m_max)| × k + floor_j     # model/dynamics.py payload_envelope
+```
+
+- `m_max`: 선언된 최대 페이로드 (arm.yaml `payload.max_kg`, 쿡북 350만 기록)
+- `k`: 추정 감도 불확도 여유율 (calibration.yaml `estimation.k`, 쿡북 340 --phase k)
+- `floor_j`: 정지 잔차 바닥 [N·m] (calibration.yaml `estimation.floor`, 쿡북 340 --phase floor)
+
+접힌 자세에선 포락선이 작아 민감, 뻗어서 들 땐 의도된 부하만큼 관대해진다. 데몬은 매 사이클 계산해 넘긴다(FK 비용 µs).
+전력 모드(캡 상향, `safety.power_torque_limit`)는 인터록 조건 — 추정기 + floor/k + 세션 tare 완료 — 을 충족할 때만 걸린다.
+캡 상향으로 COLLISION(포화 기반)은 사실상 비활성화되므로, OVERTEMP·모터 내장 과부하 보호·EPROM ceiling이 번아웃 최후선이다.
+데몬은 정착 진입마다 auto-tare한다(FR-8, 단 |τ_ext| ≥ warn이면 건너뜀 — 걸린 하중을 0점으로 삼지 않기 위해).
 
 ## 4. 리플렉스 동작
 

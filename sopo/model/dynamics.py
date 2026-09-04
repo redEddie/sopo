@@ -168,6 +168,18 @@ class GravityModel:
             out[sopo_name] = float(np.dot(np.cross(point - origin, force), axis))
         return out
 
+    def payload_envelope(self, q_rad: dict[str, float], m_max: float, k: float,
+                         floor: dict[str, float] | None = None) -> dict[str, float]:
+        """페이로드 포락선 임계 [N·m]: thr_j(q) = |extra_load_torque_j(q, m_max)| × k + floor_j.
+
+        m_max는 선언된 최대 페이로드 [kg] (arm.yaml payload), k는 추정 감도 불확도 여유율,
+        floor는 정지 잔차 바닥 [N·m] (둘 다 calibration.yaml estimation — 쿡북 340).
+        floor에 없는 관절은 바닥 0. 설계: docs/payload-safety-requirements.md 3.1.
+        """
+        floor = floor or {}
+        extra = self.extra_load_torque(q_rad, m_max)
+        return {n: abs(extra[n]) * k + floor.get(n, 0.0) for n in extra}
+
     def load_permille(self, q_rad: dict[str, float],
                       scale: dict[str, float] | None = None) -> dict[str, float]:
         """관절별 예측 Present_Load [‰]. 부호 포함 (토크 방향).
