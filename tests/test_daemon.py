@@ -10,7 +10,8 @@ CFG = {
     "joints": [{"name": "J1", "type": "continuous", "motor_id": 1, "range_ticks": 2000, "firmware_multiturn": True, "home_abs": 2048},
                {"name": "J2", "type": "dual", "ids": [10, 11], "reference_id": 11, "K": 4005},
                {"name": "J4", "type": "single", "motor_id": 19}],
-    "safety": {"torque_limit": 200, "position_limits": {19: [220, 3969]}},
+    "safety": {"torque_limit": 200, "position_limits": {19: [220, 3969]},
+               "damping_torque_limits": {"J2": 350}, "stop_torque_off_joints": ["J1"]},
     "standby_pose": {"J4": 2300},
     "rate_hz": 100,
 }
@@ -35,7 +36,7 @@ class FakeBus:
         if disable_torque_ids: self.torque_off_verified(disable_torque_ids)
     def _step(self):
         for i in self.pos:
-            if self.torque[i]:
+            if self.torque[i] == 1:
                 d = self.goal[i] - self.pos[i]
                 self.pos[i] += max(-30, min(30, d))
     def read(self, reg, mid):
@@ -54,7 +55,7 @@ class FakeBus:
         if reg == "Present_Temperature": return {i: 35 for i in ids}
         if reg == "Present_Voltage": return {i: 122 for i in ids}
         if reg == "Torque_Enable": return {i: self.torque[i] for i in ids}
-        return {i: 0 for i in ids}
+        return {i: self.regs.get((i, reg), 0) for i in ids}
     def sync_write(self, reg, values):
         for i, v in values.items(): self.write(reg, i, v)
     def enable_torque(self, ids):
@@ -188,8 +189,11 @@ def test_daemon_exit_holds_torque(monkeypatch):
     from sopo.runtime.client import SopoClient
     c = SopoClient("127.0.0.1", ports)
     assert c.command("move")["ok"]
+    d.bus.regs[(19, "Goal_Velocity")] = 1
+    d.entry_speed_previous = {19: 200}
     c.command("shutdown"); t.join(timeout=3)
     assert d.bus.torque[19] == 1 and d.bus.regs[(19, "Torque_Limit")] == 600  # holds, stiff
+    assert d.bus.regs[(19, "Goal_Velocity")] == 200
 
 
 def test_daemon_adopts_held_arm_at_start(monkeypatch):
@@ -384,3 +388,108 @@ def test_auto_tare_on_settle_and_guard(monkeypatch):
     time.sleep(0.8)
     assert d.estimator.calls == 1                            # 추가 tare 없음 (가드)
     c.command("shutdown"); t.join(timeout=3)
+
+
+def test_move_captures_current_pose_and_brings_only_outside_joint_inside(running_daemon):
+    d, c = running_daemon
+    # J4 has a configured upper bound of 3969. A stale motor goal must never be
+    # used when torque is enabled, and the configured standby pose is irrelevant.
+    d.bus.pos[19] = 3990
+    d.bus.goal[19] = 2300
+    initial = c.command("move")
+    assert initial["ok"] and initial["entering_range"], initial
+    time.sleep(0.2)
+    state = c.state()
+    assert state["comm_ok"] and state["mode"] == "move" and not state["entering_range"]
+    assert state["joints"]["J4"]["pos"] == 3957
+    assert state["joints"]["J1"]["pos"] == 2100
+    assert state["joints"]["J2"]["pos"] == 1500
+    assert c.acquire("ready")["ok"]
+
+
+def test_damped_stop_latches_all_motors_and_revokes_motion(running_daemon):
+    d, c = running_daemon
+    assert c.command("move")["ok"]
+    assert c.acquire("motion")["ok"]
+    assert d.bus.regs[(10, "Torque_Limit")] == 200
+    assert c.command("stop") == {"ok": True, "mode": "damped"}
+    assert d.bus.torque == {1: 0, 10: 2, 11: 2, 19: 2}
+    assert d.bus.regs[(10, "Torque_Limit")] == d.bus.regs[(11, "Torque_Limit")] == 350
+    assert d.bus.regs[(1, "Torque_Limit")] == 200
+    assert c.state()["lease"] is None
+    for cmd in ("goto", "acquire", "move", "recover", "idle"):
+        assert not c.command(cmd)["ok"]
+    # Model descent past a configured software bound. Damping is a firmware mode,
+    # so the fake bus must not simulate position following at torque value 2.
+    d.bus.pos[19] = 4000
+    time.sleep(0.1)
+    state = c.state()
+    assert state["mode"] == "damped"
+    assert state["joints"]["J4"]["pos"] == 4000
+    assert state["joints"]["J4"]["goal"] is None
+    assert d.bus.torque == {1: 0, 10: 2, 11: 2, 19: 2}
+
+
+def test_damped_reset_requires_separate_move(running_daemon):
+    d, c = running_daemon
+    assert c.command("move")["ok"]
+    assert c.command("stop")["ok"]
+    d.last_trips = ["test latch"]
+    assert c.command("reset") == {"ok": True, "mode": "idle", "torque_off": True}
+    assert set(d.bus.torque.values()) == {0}
+    assert d.last_trips == []
+    d.bus.pos[1] = 2200  # J1 was repositioned by hand while its torque was off.
+    assert c.command("move")["mode"] == "move"
+    assert set(d.bus.torque.values()) == {1}
+    assert d.bus.goal[1] == 2200
+
+
+def test_failed_reset_blocks_reenable(running_daemon, monkeypatch):
+    d, c = running_daemon
+    assert c.command("move")["ok"]
+    monkeypatch.setattr(d.bus, "torque_off_verified", lambda ids: [19])
+    assert not c.command("reset")["ok"]
+    assert d.mode is daemon_mod.ArmMode.STOPPED
+    assert not c.command("recover")["ok"]
+    assert not c.command("move")["ok"]
+
+def test_release_can_hold_final_target_after_success(running_daemon):
+    _, c = running_daemon
+    assert c.command("move")["ok"]
+    assert c.acquire("trajectory")["ok"]
+    c.send_action({"J1": 2100, "J2": 1500, "J4": 2000})
+    time.sleep(0.1)
+    assert not c.release(hold={"J4": 2015})["ok"]
+    assert c.lease
+    assert c.release(hold={"J1": 2100, "J2": 1500, "J4": 2015})["ok"]
+    time.sleep(0.6)
+    state = c.state()
+    assert state["lease"] is None
+    assert not state["stale"]
+    assert state["joints"]["J4"]["goal"] == 2015
+    assert state["joints"]["J4"]["pos"] == 2015
+
+
+def test_hotfix_supports_each_joint_and_clears_independently(monkeypatch):
+    from pathlib import Path
+    from sopo.config import load_arm_config
+
+    monkeypatch.setattr(daemon_mod, "FeetechBus", FakeBus)
+    config = Path(__file__).resolve().parents[1] / "configs" / "arm.yaml"
+    d = daemon_mod.Daemon(load_arm_config(config))
+    for joint in d.joints:
+        result = d._handle({"cmd": "hotfix", "joint": joint.name, "delta_ticks": -5})
+        assert result == {"ok": True, "joint": joint.name, "hotfix_ticks": -5, "pending": True}
+
+    d.mode = daemon_mod.ArmMode.MOVE
+    d.comm_ok = d.settled = True
+    d.stream.push({"J2": 1500, "J3": 2883}, time.monotonic(), sticky=True)
+    response = d._handle({"cmd": "hotfix", "joint": "J2", "delta_ticks": 2})
+    assert response["goal_ticks"] == 1500
+    assert response["command_ticks"] == 1497
+    d.goal["J2"] = 1497
+    state = d._state(0, 0)["joints"]["J2"]
+    assert state["nominal_goal"] == 1500 and state["goal"] == 1497
+    assert d._handle({"cmd": "hotfix", "joint": "J2", "clear": True})["command_ticks"] == 1500
+    assert "J2" not in d.hotfix_ticks
+    assert d.hotfix_ticks["J3"] == -5

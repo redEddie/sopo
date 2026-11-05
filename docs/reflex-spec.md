@@ -8,14 +8,14 @@
 
 - **순수 로직 모듈**: 버스를 만지지 않는다. 매 사이클 측정값을 받아 이벤트/모드를 돌려준다 → 가짜 데이터로 단위 테스트.
 - **래칭**: 한 번 REFLEX에 들어가면 `recover()`를 명시적으로 부를 때까지 명령을 거부한다 (Franka `automaticErrorRecovery`).
-- **홀드가 기본, 토크 해제는 예외**: 충돌·추종 오차는 "현재 위치를 목표로 다시 쓰고 홀드"(미는 힘만 제거, 중력 낙하 없음). 토크 해제는 통신 두절·과열에만.
+- **홀드가 기본, 토크 해제는 예외**: 충돌은 "현재 위치를 목표로 다시 쓰고 홀드"(미는 힘만 제거, 중력 낙하 없음). 토크 해제는 통신 두절·과열에만.
 - J1 range 클램프, 소프트 리밋 클램프는 **이벤트가 아니다** (조용히 잘라내기만).
 
 ## 2. 상태와 이벤트
 
 ```python
 class Mode(Enum): IDLE, MOVE, REFLEX, STOPPED          # STOPPED = 토크 해제됨, 재시작 필요
-class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP, JOINT_LIMIT, EXTERNAL_FORCE
+class Event(Enum): COLLISION, PAIR_MISMATCH, COMM_LOSS, OVERTEMP, JOINT_LIMIT, EXTERNAL_FORCE
 ```
 
 ## 3. 판정 규칙 (모터 단위, 기본값은 ReflexConfig로 조정)
@@ -24,7 +24,6 @@ class Event(Enum): COLLISION, TRACKING_ERROR, PAIR_MISMATCH, COMM_LOSS, OVERTEMP
 |---|---|---|---|
 | COLLISION | `abs(load) >= sat_ratio * cap` 가 `t_collision` 창 동안 지속 **AND** 그 창에서 추종 오차 감소량 < `progress_ticks` (손에 잡혀 1~2틱씩 기어가는 것도 충돌) | sat_ratio 0.95, t_collision 0.3 s, progress_ticks 40 | 07: 무부하 85%, 잡으면 100% 포화, 잡힌 채 ~110틱/s 로 기어감 |
 | (가속 유예) | 목표가 `accel_step` 이상 바뀐 직후 `t_accel` 동안은 COLLISION 판정 보류 | accel_step 40틱, t_accel 0.2 s | Franka의 acceleration 임계값 상향에 대응 |
-| TRACKING_ERROR | `abs(goal-present) > err_ticks` 가 `t_error` 이상 지속 | err_ticks 150(≈13°), t_error 0.5 s | 캡 부족·걸림·미응답 통합 감지 |
 | PAIR_MISMATCH | 듀얼 쌍 `abs(ref + mirror - K) > pair_tol` 가 `t_pair` 지속 | pair_tol 60틱, t_pair 0.3 s | 실측: 자유 이동 ±6, 잡혀서 포화 시 +21(기어 변형). 진짜 불일치는 수백 틱 |
 | COMM_LOSS | 연속 통신 실패 ≥ `comm_fail_max` | 5 | 연속 오류 5회 |
 | OVERTEMP | 온도 ≥ `temp_stop`가 **2회 연속**(2 s 간격) 확인될 때. 0~100 °C 밖 값은 버스 쓰레기로 무시 | 70 °C / 65 °C, temp_confirm 2 | 실사례: 한 바이트 어긋난 150 °C 한 샘플로 STOPPED 됐음 (2026-08-28) |
@@ -68,7 +67,7 @@ thr_j(q) = |extra_load_torque_j(q, m_max)| × k + floor_j     # model/dynamics.p
 
 ## 4. 리플렉스 동작
 
-1. COLLISION / TRACKING_ERROR / PAIR_MISMATCH → `Mode.REFLEX`.
+1. COLLISION / PAIR_MISMATCH → `Mode.REFLEX`.
    호출자는 `hold_targets(present)`를 받아 **1회 sync_write**(목표=현재 실측). 옵션 `backoff_ticks`(기본 0, 권장 30~50)면
    충돌 관절만 부하 반대 방향으로 그만큼 물러난 목표. 이후 `update()`는 계속 호출하되 명령은 거부.
 2. COMM_LOSS / OVERTEMP → `Mode.STOPPED`. 호출자는 **홀드(freeze)** — 토크를 끄지 않는다 (#10, Cat 2). 과열은 펌웨어 보호에 맡기고 `idle`로만 해제.
@@ -123,7 +122,7 @@ class Reflex:
 2. 목표 변경 직후 150ms 동안 load 150(=캡): 가속 유예로 이벤트 없음.
 3. load 150이 0.35 s 지속 + 오차 100으로 정체: COLLISION 1회, mode REFLEX, 이후 update 반복해도 중복 Trip 없음.
 4. load 150이 0.35 s 지속이지만 오차가 계속 감소: 이벤트 없음(무거운 자세에서 느리게 진행 중).
-5. 오차 200이 0.6 s 지속(load 낮음): TRACKING_ERROR.
+5. 오차 200이 0.6 s 지속(load 낮음): 리플렉스 없음.
 6. 쌍 합이 K±40: PAIR_MISMATCH.
 7. comm_ok=False 5회: STOPPED. temps {19: 71}: STOPPED. {19: 66}: warnings만.
 8. recover: load 높으면 False, 낮고 오차 작으면 True → MOVE.

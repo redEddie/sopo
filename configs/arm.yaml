@@ -73,6 +73,9 @@ safety:
   position_limits: {}
   # 관절별 토크 캡 오버라이드 (모터 ID: 천분율). 순한 모드 전용 — 전력 모드에서는 균일 캡.
   torque_limits: {}
+  # Stop 감쇠 전용 상한(‰). 듀얼 관절의 두 모터에 같은 값을 적용한다.
+  damping_torque_limits: {J2: 350, J3: 325}
+  stop_torque_off_joints: [J1]
   # 외력 감지 (model/estimation.py — 정착 상태에서만 판정). 관절 토크 N·m 기준.
   # ext_warn_nm: 초과 시 상태 스트림/로그 통지만. ext_trip_nm: t_ext초 지속 시 REFLEX 홀드.
   # ext_warn_nm: 0.3
@@ -91,9 +94,3 @@ payload:
 # 실행 스크립트는 이 파일이 같은 폴더에 있으면 위 safety 값 위에 덮어씌워 적용한다.
 
 rate_hz: 50
-
-# 초기화(examples/init.py): 자가진단 후 이 자세로 이동해 대기. 비어 있으면 현재 자세 유지.
-# 값은 reference 모터 틱. 연속 관절은 home_abs(2048) 기준 프레임으로 저장한다 (세션마다 바퀴 수가 달라도 같은 자세).
-# 측정: 토크 OFF로 자세를 만든 뒤 python cookbook/2_pose_calibration/220_capture_pose.py --config configs/arm.yaml
-standby_pose: {J1: 2020, J2: 1191, J3: 3009, J4: 2049, J5: 2149, J6: 2048}
-

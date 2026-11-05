@@ -44,7 +44,7 @@ sopo/            핵심 패키지 — 층별 서브패키지 구조 (공개 API�
 cookbook/        주제별 학습 경로 쿡북 (1_setup → 2_pose_calibration → 3_safety_torque → 4_torque_model)
                    폴더 번호 순서대로 따라가면 조립 직후부터 토크 모델 튜닝까지 진행 — README.md 참조
 examples/
-  init.py          초기화: 자가진단(관절별 2.6° 왕복) → 연속 관절 home 확정 → standby_pose 대기
+  init.py          초기화: 자가진단(관절별 2.6° 왕복) → 연속 관절 home 확정 → 선택적으로 기록된 standby_pose 이동
   run_waypoints.py 다관절 웨이포인트 주행 (안전 루프의 첫 클라이언트)
   jog.py           키보드 조그 (버스 직접, 데몬 없이)
   jog_client.py    키보드 조그 — sopod 클라이언트 (액션 스트림)
@@ -83,8 +83,7 @@ python cookbook/1_setup/140_move_joint.py --config configs/arm.yaml --joint J4 -
 # 7. 다관절 웨이포인트 주행 (리플렉스 포함)
 python examples/run_waypoints.py --config configs/arm.yaml --waypoints configs/waypoints.example.yaml --verbose
 
-# 7.5 초기화: 자가진단 후 standby_pose(arm.yaml)로 이동해 대기 — 제어 세션 시작 전 루틴
-python cookbook/2_pose_calibration/220_capture_pose.py --config configs/arm.yaml   # 토크 OFF로 자세 만든 뒤 1회: standby_pose 기록
+# 7.5 선택적 자가진단 (관절별 소구간 왕복)
 python examples/init.py --config configs/arm.yaml
 
 # 8. 키보드 조그 (←/→ 이동, ↑/↓ 관절, space 홀드, q 종료)
@@ -103,7 +102,8 @@ sopod --config configs/arm.yaml            # 또는 python -m sopo.runtime.daemo
 
 # 터미널 2: 상태 / 명령
 python -m sopo.runtime.cli watch                   # 50Hz 상태 스트림 (모드, 관절, 부하, 전압, 지터)
-python -m sopo.runtime.cli init                    # 자가진단 → standby_pose, 토크 유지
+python -m sopo.runtime.cli move                    # 현재 자세에서 토크 ON, 실측 범위 밖의 관절만 저속 복귀
+python -m sopo.runtime.cli init                    # 별도의 자가진단(관절별 소구간 왕복)
 python -m sopo.runtime.cli goto J4=45 J6=-90       # 단발 목표, degree (REP-103 규약, MOVE 모드에서). raw 틱은 --ticks
 python -m sopo.runtime.cli recover                 # REFLEX 래칭 해제
 python -m sopo.runtime.cli idle                    # 토크 OFF
@@ -128,7 +128,7 @@ while True:
 ```
 
 모드: `idle`(토크 OFF) · `guiding`(토크 OFF, 가르치기) · `move` · `reflex`(래칭) · `stopped`. 토크는 명령으로만 켜지고, 켜기 전 항상 `apply_safety()`.
-REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가는 길이다. `idle`/`guiding`(토크 OFF)은 항상 허용.
+REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가는 길이다. `idle`/`guiding`(토크 OFF)은 REFLEX에서 허용된다.
 액션 스트림이 0.5초 끊기면 **그 순간의 위치를 목표로 고정**해 홀드한다(끌려가지 않음). 데몬은 시작할 때 토크를 건드리지 않는다 —
 이전 세션이 홀드로 끝났으면 REFLEX(`INHERITED_HOLD`)로 이어받아 `recover`/`idle`을 기다린다.
 
@@ -136,6 +136,21 @@ REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가
 `ext_torque` 필드에 관절별 외력 토크 추정치[N·m]가 실린다 — 잔차 `LPF(측정 토크 − RNEA(q,q̇))`라 자중은 빠진 순수 외력이다.
 0.3 N·m 넘으면 경고, 1.0 N·m가 0.3초 지속되면 EXTERNAL_FORCE 리플렉스. `tare_ext` 명령은 현재 잔차를 0점으로 저장해
 듀얼 preload·마찰 같은 정류 바이어스를 제거한다 (예: `python -m sopo.runtime.cli tare_ext`).
+
+RViz로 플랜지 목표를 계획·실행하고 추종 CSV를 보려면 [SOPO MoveIt 2](ros2/README.md)를 참고한다.
+
+MOVE에서 최종 목표를 홀드할 때 `sopo_cli hotfix J2 -5`로 J2 홀드 목표에
+-5틱을 더할 수 있다. IDLE에서 입력하면 값을 예약하고 다음 MOVE의 정상 홀드에
+적용한다. 각 관절의 누적 보정은 ±16틱이며 스트리밍 궤적과 워치독 홀드에는 적용하지
+않는다. `sopo_cli hotfix J2 clear`는 J2의 임시 보정을 지운다.
+
+`python -m sopo.runtime.cli stop`은 전 관절의 위치 명령을 끊고, J1 토크를
+해제하고 J2~J6에 서보 감쇠를 적용하는 명시적 Stop이다. 팔이 자중으로 내려갈 경로와 받침을 확보한 뒤 사용한다.
+DAMPED 중에는 일반 관절 범위, 속도, 경과 시간으로 위치 홀드에 전환하지 않는다.
+데몬을 종료하거나 다시 시작해도 서보가 감쇠 상태를 유지한다.
+팔을 바닥이나 받침에 놓고 `python -m sopo.runtime.cli reset`을 보내면 전 모터
+토크가 해제되고, 확인이 끝나면 리플렉스와 제어권을 초기화해 IDLE로 전환한다.
+별도로 `move`를 보내면 현재 엔코더 자세에서 정상 MOVE 진입 절차가 시작된다.
 
 ## 안전 설계
 
@@ -146,7 +161,7 @@ REFLEX 중에는 `move/init/goto`가 거부되고 `recover`만 MOVE로 돌아가
 2. **모터 내부 과부하 차단** — 허용 토크의 80%(`Overload_Torque`)로 500ms(`Protection_Time`)
    이상 밀면 20%(`Protective_Torque`)로 자동 강하. 사람이나 장애물에 끼었을 때 스스로 힘을 뺀다.
 3. **호스트 측 클램핑** — 관절 소프트 리밋 + 제어 주기당 최대 이동량(`max_relative_target`)
-   제한으로 목표치 점프를 차단. `reflex.py`가 부하 포화+정체(충돌), 추종 오차, 쌍 불일치, 통신 두절, 과열을 감시해 홀드/정지한다.
+   제한으로 목표치 점프를 차단. `reflex.py`가 부하 포화+정체(충돌), 쌍 불일치, 통신 두절, 과열을 감시해 홀드/정지한다.
 
 사람 옆에서 돌릴 때는 `torque_limit`을 400(40%) 이하로 유지할 것.
 

@@ -40,9 +40,11 @@ class SopoClient:
         self.lease = r.get("lease") if r.get("ok") else None
         return r
 
-    def release(self) -> dict:
-        r = self.command("release", lease=self.lease)
-        self.lease = None
+    def release(self, hold: dict[str, int] | None = None) -> dict:
+        options = {"hold": hold} if hold is not None else {}
+        r = self.command("release", lease=self.lease, **options)
+        if r.get("ok"):
+            self.lease = None
         return r
 
     def send_action(self, action: dict[str, int]) -> None:

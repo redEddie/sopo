@@ -31,7 +31,7 @@ def test_new_schema_and_calibration_merge():
                   calib={"position_limits": {19: [220, 3969]}, "torque_limits": {19: 150}})
     cfg = load_arm_config(path)
     joints = make_joints(cfg)
-    assert make_joint_limits(cfg, joints) == {"J2": (200, 3896), "J4": (220, 3969)}  # J1(continuous) 제외
+    assert make_joint_limits(cfg, joints) == {"J2": (200, 3805), "J4": (220, 3969)}  # J1(continuous) 제외
     assert make_pairs(cfg) == {"J2": (11, 10, 4005)}
 
 

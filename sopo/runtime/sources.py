@@ -191,6 +191,15 @@ class StreamSource:
         self._last_push = now
         self._sticky = sticky
 
+    @property
+    def has_hold_target(self) -> bool:
+        return self._sticky and self._action is not None
+
+    def hold_target(self, joint: str) -> int | None:
+        if not self.has_hold_target:
+            return None
+        return self._action.get(joint, self._targets.get(joint))
+
     def clear(self) -> None:
         self._action = None
         self._targets.clear()

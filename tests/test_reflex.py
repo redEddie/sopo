@@ -106,20 +106,11 @@ def test_collision_creeping_under_hand():
     assert r.mode is Mode.REFLEX
 
 
-def test_tracking_error():
-    """Scenario 5: persistent large error with low load triggers TRACKING_ERROR."""
-    cfg = ReflexConfig(err_ticks=150, t_error=0.5)
-    r = Reflex(LIMITS, PAIRS, cfg)
-
-    r.update(now=0.0, present={19: 1000}, goal={19: 1200}, load={19: 20})
-    trips = r.update(
-        now=0.6, present={19: 1000}, goal={19: 1200}, load={19: 20}
-    )
-
-    assert len(trips) == 1
-    assert trips[0].event is Event.TRACKING_ERROR
-    assert trips[0].motor_id == 19
-    assert r.mode is Mode.REFLEX
+def test_tracking_error_alone_does_not_trip():
+    r = Reflex(LIMITS, PAIRS, ReflexConfig())
+    for now in (0.0, 0.6, 1.2):
+        assert r.update(now=now, present={19: 1000}, goal={19: 1200}, load={19: 20}) == []
+    assert r.mode is Mode.MOVE
 
 
 def test_pair_mismatch():

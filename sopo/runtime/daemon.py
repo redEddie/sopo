@@ -32,12 +32,17 @@ from ..safety.limits import SafetyLimits, apply_safety, freeze, verify_eprom
 from .sources import StreamSource
 from .startup import self_test
 
+ENTRY_SPEED_TICKS_S = 50  # 0.732 RPM, one encoder tick every 20 ms
+ENTRY_MARGIN_TICKS = 12
+ENTRY_TIMEOUT_S = 4.0
+HOTFIX_LIMIT_TICKS = 16
 DEFAULT_PORTS = {"state": 5555, "cmd": 5556, "action": 5557}
 
 
 class ArmMode(str, Enum):
     IDLE = "idle"          # torque off
     GUIDING = "guiding"    # torque off, state published (teach by hand)
+    DAMPED = "damped"      # latched firmware damping, position control suspended
     MOVE = "move"          # torque on, following the action stream
     REFLEX = "reflex"      # latched by reflex; 'recover' to resume
     STOPPED = "stopped"    # comm loss / overtemp; torque off; restart the daemon
@@ -53,6 +58,26 @@ class Daemon:
         self.limits = make_limits(cfg)
         self.joint_limits = make_joint_limits(cfg, self.joints)
         self.ids = all_motor_ids(self.joints)
+        safety = cfg.get("safety", {})
+        damping = safety.get("damping_torque_limits") or {}
+        torque_off = set(safety.get("stop_torque_off_joints") or [])
+        joint_names = {joint.name for joint in self.joints}
+        if torque_off - joint_names or torque_off == joint_names:
+            raise ValueError("Stop torque-off joints must leave at least one damping joint")
+        self.stop_torque = {
+            motor: 0 if joint.name in torque_off else 2
+            for joint in self.joints for motor in joint.motor_ids
+        }
+        if damping.keys() - joint_names:
+            raise ValueError("Unknown joint in damping_torque_limits")
+        self.damping_caps = {}
+        for joint in self.joints:
+            cap = damping.get(joint.name)
+            if cap is None:
+                continue
+            if type(cap) is not int or not 1 <= cap <= self.limits.eprom_torque_ceiling:
+                raise ValueError(f"Invalid damping torque limit for {joint.name}")
+            self.damping_caps.update(dict.fromkeys(joint.motor_ids, cap))
         self.rate = float(cfg.get("rate_hz", 50))
         self.bus = FeetechBus(cfg["arm"]["port"], cfg["arm"].get("baudrate", 1_000_000))
         self.stream = StreamSource(watchdog_s)
@@ -61,6 +86,13 @@ class Daemon:
         self.soft = True
         self.goal: dict[str, int] = {}
         self.running = False
+        self.comm_ok = False
+        self.reset_failed = False
+        self.hotfix_ticks: dict[str, int] = {}
+        self.entry_target: dict[str, int] | None = None
+        self.entry_speed_previous: dict[int, int] = {}
+        self.entry_started = 0.0
+        self.entry_duration = 0.0
         self.cmd_q: queue.Queue = queue.Queue()
         self.cycle_times: deque = deque(maxlen=200)
         self.last_trips: list[str] = []
@@ -165,10 +197,15 @@ class Daemon:
         self.reflex = self._new_reflex()
         # Never touch torque at start: a previous session may have left the arm holding (Cat 2, #10).
         try:
-            on = [i for i, v in self.bus.sync_read("Torque_Enable", self.ids).items() if v]
+            torque = self.bus.sync_read("Torque_Enable", self.ids)
         except Exception:
-            on = []
-        if on:
+            self.bus.disconnect()
+            raise
+        on = [i for i, value in torque.items() if value]
+        if 2 in torque.values():
+            self.mode = ArmMode.DAMPED
+            self._log("inherited damping; reset is required before MOVE")
+        elif on:
             self.mode = ArmMode.REFLEX
             self.last_trips = ["[REFLEX] INHERITED_HOLD: torque was on at daemon start"]
             self._log(f"torque already on for {on}: adopting as a held arm (REFLEX). 'recover' to move, 'idle' to release")
@@ -183,18 +220,28 @@ class Daemon:
         self.rep = ctx.socket(zmq.REP); self.rep.bind(f"tcp://*:{self.ports['cmd']}")
         self.running = True
         threading.Thread(target=self._rep_thread, daemon=True).start()
-        self._log(f"sopod up: state :{self.ports['state']} cmd :{self.ports['cmd']} action :{self.ports['action']} | mode {self.mode.value}, torque off")
+        self._log(f"sopod up: state :{self.ports['state']} cmd :{self.ports['cmd']} action :{self.ports['action']} | mode {self.mode.value}")
         try:
             self._loop()
         finally:
             self.running = False
-            if self.release_on_exit or self.mode in (ArmMode.IDLE, ArmMode.GUIDING):
-                self._log("shutting down: torque off")
-                self.bus.disconnect(disable_torque_ids=self.ids)
-            else:
-                self._freeze("daemon exit")
-                self._log("shutting down: arm HOLDS (torque on). release: python cookbook/1_setup/150_torque_off.py")
+            if self.reset_failed or self.mode is ArmMode.DAMPED:
+                self._log("shutting down without re-enabling torque")
                 self.bus.disconnect()
+            elif self.release_on_exit or self.mode in (ArmMode.IDLE, ArmMode.GUIDING):
+                self._log("shutting down: torque off")
+                try:
+                    if self.entry_speed_previous and not self.bus.torque_off_verified(self.ids):
+                        self._restore_entry_speed()
+                finally:
+                    self.bus.disconnect(disable_torque_ids=self.ids)
+            else:
+                try:
+                    if self._freeze("daemon exit"):
+                        self._restore_entry_speed()
+                        self._log("shutting down: arm HOLDS (torque on). release: python cookbook/1_setup/150_torque_off.py")
+                finally:
+                    self.bus.disconnect()
 
     # ---------------------------------------------------------------- threads
     def _rep_thread(self) -> None:
@@ -233,14 +280,21 @@ class Daemon:
                 self.raw_pos = self.bus.sync_read("Present_Position", self.ids)
                 self.rp = reflex_present_view(self.bus, self.joints, self.present, self.raw_pos)
                 if self.mode is ArmMode.MOVE:
-                    action = self.stream.get_action(self.present, t0)
-                    step = SOFT_START_STEP if self.soft else self.limits.max_relative_target
-                    self.goal = clamp_joint_goals(action, self.present, self.joint_limits, step, self.joints,
-                                                  self.limits.brake_zone_ticks, self.limits.brake_min_step)
-                    command_joints(self.bus, self.joints, self.goal)
-                    if self.soft and all(abs(action[n] - self.present[n]) < ARRIVAL_TICKS for n in action):
-                        self.soft = False
-                elif self.mode is not ArmMode.REFLEX:
+                    if self.entry_target is not None:
+                        self.goal = dict(self.entry_target)
+                        self._check_entry(t0)
+                    else:
+                        action = self.stream.get_action(self.present, t0)
+                        if self.stream.has_hold_target:
+                            for name, offset in self.hotfix_ticks.items():
+                                action[name] += offset
+                        step = SOFT_START_STEP if self.soft else self.limits.max_relative_target
+                        self.goal = clamp_joint_goals(action, self.present, self.joint_limits, step, self.joints,
+                                                      self.limits.brake_zone_ticks, self.limits.brake_min_step)
+                        command_joints(self.bus, self.joints, self.goal)
+                        if self.soft and all(abs(action[n] - self.present[n]) < ARRIVAL_TICKS for n in action):
+                            self.soft = False
+                elif self.mode not in (ArmMode.REFLEX, ArmMode.DAMPED):
                     self.goal = dict(self.present)
             except KeyboardInterrupt:
                 self.bus.port.clearPort()
@@ -324,10 +378,12 @@ class Daemon:
                         command_joints(self.bus, self.joints, hold_joint_goals(self.joints, hold))
                     except Exception as e:
                         self._log(f"hold send failed: {e}")
-                    self.mode = ArmMode.REFLEX; self._stiffen(); self._revoke("reflex")
+                    self.mode = ArmMode.REFLEX; self.entry_target = None
+                    self._stiffen(); self._revoke("reflex")
                     why = self.last_trips[-1].replace("[REFLEX] ", "") if self.last_trips else "?"
                     self._log(f"REFLEX latched ({why}) - holding stiff. blackbox: {self.blackbox.dump('reflex')}. 'recover' to resume")
 
+            self.comm_ok = comm_ok
             elapsed = time.monotonic() - t0
             self.cycle_times.append(elapsed)
             self._publish(t0, elapsed)
@@ -353,7 +409,8 @@ class Daemon:
                     self._lease_warned = now
                     self._log("action dropped: no valid control lease (client must 'acquire' - after a reflex: 'recover' then 'acquire')")
                 return
-            self.stream.push(action, now)
+            if self.entry_target is None:
+                self.stream.push(action, now)
 
     def _drain_commands(self) -> None:
         while True:
@@ -368,12 +425,16 @@ class Daemon:
             reply_q.put(reply)
 
     # ---------------------------------------------------------------- commands
-    def _set_torque(self, on: bool) -> None:
+    def _set_torque(self, on: bool, goals: dict[int, int] | None = None) -> None:
         if on:
             limits = self._motion_limits()              # power_ok면 균일 전력 캡 (FR-7)
             apply_safety(self.bus, self.ids, limits)   # always before enabling
             if limits is not self.limits:
                 self._log(f"전력 모드: 균일 캡 {limits.torque_limit}‰ (payload safety net armed)")
+            # Seed every physical servo before torque-on, including both halves of a pair.
+            if goals is None:
+                goals = self.bus.sync_read("Present_Position", self.ids)
+            self.bus.sync_write("Goal_Position", goals)
             self.bus.enable_torque(self.ids)
         else:
             still = self.bus.torque_off_verified(self.ids)
@@ -394,13 +455,124 @@ class Daemon:
         suffix = " — payload safety net armed (다음 토크 ON부터 전력 캡)" if first and self.power_ok else ""
         self._log(f"auto-tare: biases { {n: round(b, 3) for n, b in self.estimator.biases.items()} }{suffix}")
 
-    def _enter_move(self) -> None:
+    def _bounds(self, joint):
+        if isinstance(joint, ContinuousJoint):
+            return joint.range_bounds()
+        return self.joint_limits.get(joint.name)
+
+    def _enter_move(self, *, adjust_to_limits: bool = True) -> None:
+        current = read_joints(self.bus, self.joints)
+        goals = self.bus.sync_read("Present_Position", self.ids)
+        target = dict(current)
+        correcting = []
+        if adjust_to_limits:
+            for joint in self.joints:
+                bounds = self._bounds(joint)
+                if bounds is None:
+                    continue
+                lo, hi = bounds
+                margin = min(ENTRY_MARGIN_TICKS, (hi - lo) // 2)
+                name = joint.name
+                if current[name] < lo:
+                    target[name] = lo + margin
+                elif current[name] > hi:
+                    target[name] = hi - margin
+                elif isinstance(joint, DualMotorJoint):
+                    mirror_lo, mirror_hi = self.limits.joint_range(joint.mirror_id)
+                    if goals[joint.mirror_id] < mirror_lo:
+                        target[name] = max(lo, min(hi - margin, current[name] - margin))
+                    elif goals[joint.mirror_id] > mirror_hi:
+                        target[name] = min(hi, max(lo + margin, current[name] + margin))
+                if target[name] == current[name]:
+                    continue
+                correcting.extend(joint.motor_ids)
+                if isinstance(joint, DualMotorJoint):
+                    goals[joint.reference_id] = target[name]
+                    goals[joint.mirror_id] = joint.K - target[name] - joint.preload_ticks
+                elif isinstance(joint, ContinuousJoint) and not joint.firmware_multiturn:
+                    goals[joint.motor_id] = target[name] % 4096
+                else:
+                    goals[joint.motor_ids[0]] = target[name]
+
         if self.reflex.mode in (ReflexMode.REFLEX, ReflexMode.STOPPED):
             self.reflex = self._new_reflex()
         self.stream.clear()
-        self._set_torque(True)
+        try:
+            if correcting:
+                if any(self.bus.sync_read("Operating_Mode", correcting).values()):
+                    raise ValueError("MOVE entry requires position mode on the correcting servos")
+                phase = self.bus.sync_read("Phase", correcting)
+                speed = {i: 50 if phase[i] & 4 else 1 for i in correcting}
+                self.entry_speed_previous = self.bus.sync_read("Goal_Velocity", correcting)
+                self.bus.sync_write("Goal_Velocity", speed)
+                if self.bus.sync_read("Goal_Velocity", correcting) != speed:
+                    raise RuntimeError("Could not verify MOVE entry speed")
+            self._set_torque(True, goals)
+        except Exception:
+            if self.entry_speed_previous and not self.bus.torque_off_verified(self.ids):
+                self._restore_entry_speed()
+            raise
+        self.stream.push(target, time.monotonic(), sticky=True)
+        self.entry_target = target if correcting else None
+        self.entry_started = time.monotonic()
+        self.entry_duration = max(abs(target[n] - current[n]) for n in target) / ENTRY_SPEED_TICKS_S
         self.soft = True
         self.mode = ArmMode.MOVE
+
+    def _restore_entry_speed(self) -> None:
+        if self.entry_speed_previous:
+            self.bus.sync_write("Goal_Velocity", self.entry_speed_previous)
+            restored = self.bus.sync_read("Goal_Velocity", list(self.entry_speed_previous))
+            if restored != self.entry_speed_previous:
+                raise RuntimeError("Could not verify restored MOVE speed")
+            self.entry_speed_previous.clear()
+
+    def _check_entry(self, now: float) -> None:
+        for joint in self.joints:
+            bounds = self._bounds(joint)
+            if bounds and not bounds[0] <= self.present[joint.name] <= bounds[1]:
+                break
+            if isinstance(joint, DualMotorJoint):
+                lo, hi = self.limits.joint_range(joint.mirror_id)
+                if not lo <= self.raw_pos[joint.mirror_id] <= hi:
+                    break
+        else:
+            if all(abs(self.entry_target[n] - self.present[n]) <= ENTRY_MARGIN_TICKS
+                   for n in self.entry_target):
+                self._restore_entry_speed()
+                self.entry_target = None
+                return
+        if now - self.entry_started >= self.entry_duration + ENTRY_TIMEOUT_S:
+            self.mode = ArmMode.REFLEX
+            self.last_trips = (self.last_trips + ["[REFLEX] MOVE_ENTRY: did not reach joint limits"])[-5:]
+            self._freeze("move-entry timeout")
+
+    def _start_damped(self) -> dict:
+        if self.mode not in (ArmMode.MOVE, ArmMode.REFLEX, ArmMode.DAMPED):
+            raise ValueError("Stop damping requires an energized arm")
+        self.mode = ArmMode.DAMPED
+        self._revoke("damped stop")
+        self.stream.clear()
+        self.entry_target = None
+        self.goal.clear()
+        torque = self.bus.sync_read("Torque_Enable", self.ids)
+        if any(torque.get(motor) not in (1, 2)
+               for motor, mode in self.stop_torque.items() if mode == 2):
+            raise ValueError("DAMPED latched; joints configured for damping must be energized")
+        self._apply_damping()
+        return {"ok": True, "mode": self.mode.value}
+
+    def _apply_damping(self) -> None:
+        caps = {
+            motor: self.damping_caps.get(motor, self.limits.torque_for(motor))
+            for motor, mode in self.stop_torque.items() if mode == 2
+        }
+        self.bus.sync_write("Torque_Limit", caps)
+        self.bus.sync_write("Torque_Enable", self.stop_torque)
+        if self.bus.sync_read("Torque_Enable", self.ids) != self.stop_torque:
+            raise RuntimeError("DAMPED latched but Stop torque modes were not verified; retry stop")
+        if self.bus.sync_read("Torque_Limit", list(caps)) != caps:
+            raise RuntimeError("DAMPED latched but damping limits were not verified; retry stop")
 
     def _stiffen(self) -> None:
         """Raise Torque_Limit to the hold cap so the frozen arm stays rigid (Cat 2 stop)."""
@@ -409,13 +581,17 @@ class Daemon:
         except Exception as e:
             self._log(f"stiffen failed: {e}")
 
-    def _freeze(self, reason: str) -> None:
+    def _freeze(self, reason: str) -> bool:
         """Category-2 stop: goal = present, hold cap, torque kept. Lease revoked."""
+        held = False
         try:
             freeze(self.bus, self.ids, self.limits)
+            held = True
         except Exception as e:
             self._log(f"freeze failed ({e}) - servos keep their last goal")
+        self.entry_target = None
         self._revoke(reason)
+        return held
 
     def _revoke(self, reason: str) -> None:
         if self.lease:
@@ -423,10 +599,74 @@ class Daemon:
             self.lease = None
             self.stream.clear()
 
+    def _reset(self) -> dict:
+        self.reset_failed = True
+        self.mode = ArmMode.STOPPED
+        self._revoke("reset")
+        self.stream = StreamSource(self.stream.watchdog_s)
+        self.entry_target = None
+        self.goal.clear()
+        self.settled = False
+        self._tare_done = False
+        still_on = self.bus.torque_off_verified(self.ids)
+        if still_on:
+            return {"ok": False, "mode": self.mode.value, "error": f"Torque off not verified for {still_on}"}
+        self._restore_entry_speed()
+        self.reflex = self._new_reflex()
+        self.last_trips.clear()
+        self.ext.clear()
+        self.soft = True
+        self.mode = ArmMode.IDLE
+        self.reset_failed = False
+        return {"ok": True, "mode": self.mode.value, "torque_off": True}
+
+    def _hotfix(self, joint_name: str, delta: int | None) -> dict:
+        joint = next((joint for joint in self.joints if joint.name == joint_name), None)
+        if joint is None:
+            raise ValueError(f"Unknown joint {joint_name!r}")
+        offset = 0 if delta is None else self.hotfix_ticks.get(joint_name, 0) + delta
+        if abs(offset) > HOTFIX_LIMIT_TICKS:
+            raise ValueError(f"{joint_name} hotfix is limited to ±{HOTFIX_LIMIT_TICKS} cumulative ticks")
+        response = {"ok": True, "joint": joint_name, "hotfix_ticks": offset}
+        if self.mode is ArmMode.IDLE and self.lease is None:
+            response["pending"] = True
+        else:
+            if (self.mode is not ArmMode.MOVE or self.lease or self.entry_target
+                    or not self.comm_ok or not self.settled):
+                raise ValueError("Hotfix requires IDLE or a settled MOVE hold with no control lease")
+            target = self.stream.hold_target(joint_name)
+            if target is None:
+                raise ValueError(f"{joint_name} has no active hold target")
+            goal = target + offset
+            bounds = self._bounds(joint)
+            if bounds is None or not bounds[0] <= goal <= bounds[1]:
+                raise ValueError(f"{joint_name} hotfix target is outside its joint limits")
+            response.update(goal_ticks=target, command_ticks=goal)
+        if offset:
+            self.hotfix_ticks[joint_name] = offset
+        else:
+            self.hotfix_ticks.pop(joint_name, None)
+        return response
+
     def _handle(self, msg: dict) -> dict:
         cmd = msg.get("cmd")
         if cmd == "status":
             return {"ok": True, "state": self._state(0.0, 0.0)}
+        if cmd == "reset":
+            return self._reset()
+        if self.reset_failed and cmd != "shutdown":
+            return {"ok": False, "error": "Reset did not complete; retry reset"}
+        if cmd in ("stop", "damped"):
+            return self._start_damped()
+        if self.mode is ArmMode.DAMPED and cmd != "shutdown":
+            return {"ok": False, "error": "DAMPED latched; reset, then move to resume"}
+        if cmd == "hotfix":
+            delta = msg.get("delta_ticks")
+            if msg.get("clear") is True and delta is None:
+                return self._hotfix(msg.get("joint"), None)
+            if type(delta) is not int or abs(delta) > HOTFIX_LIMIT_TICKS:
+                raise ValueError(f"Hotfix requires a signed integer within ±{HOTFIX_LIMIT_TICKS} ticks")
+            return self._hotfix(msg.get("joint"), delta)
         if cmd == "tare_ext":
             # 외력 관측기 0점 맞추기. 토크 ON 정착(MOVE + 정지) 상태에서만 허용 (FR-9) —
             # 토크 OFF나 이동 중이면 잔차가 −G(q)나 과도응답으로 오염된다.
@@ -440,6 +680,8 @@ class Daemon:
             self._log(f"external torque tare: biases { {n: round(b, 3) for n, b in self.estimator.biases.items()} }")
             return {"ok": True, "biases": {n: round(b, 4) for n, b in self.estimator.biases.items()}}
         if cmd == "acquire":
+            if self.entry_target is not None:
+                return {"ok": False, "error": "MOVE entry is still bringing joints within limits"}
             name = str(msg.get("name") or "client")
             if self.mode in (ArmMode.REFLEX, ArmMode.STOPPED):
                 return {"ok": False, "error": f"cannot acquire in {self.mode.value}: recover first"}
@@ -450,9 +692,24 @@ class Daemon:
             self._log(f"control lease -> '{name}'")
             return {"ok": True, "lease": self.lease["token"], "mode": self.mode.value}
         if cmd == "release":
-            if self.lease and msg.get("lease") == self.lease["token"]:
-                self._revoke("released"); return {"ok": True}
-            return {"ok": False, "error": "not the lease holder"}
+            if not self.lease or msg.get("lease") != self.lease["token"]:
+                return {"ok": False, "error": "not the lease holder"}
+            hold = msg.get("hold")
+            if hold is not None:
+                if (self.mode is not ArmMode.MOVE or self.entry_target is not None
+                        or not self.comm_ok or self.stream.stale):
+                    return {"ok": False, "error": "MOVE stream is not ready to hold its final target"}
+                if not isinstance(hold, dict) or set(hold) != self._ref_ids.keys():
+                    return {"ok": False, "error": "Final hold requires targets for all joints"}
+                for joint in self.joints:
+                    target = hold[joint.name]
+                    bounds = self._bounds(joint)
+                    if type(target) is not int or bounds is None or not bounds[0] <= target <= bounds[1]:
+                        return {"ok": False, "error": f"{joint.name} final hold is outside its allowed range"}
+            self._revoke("released")
+            if hold is not None:
+                self.stream.push(hold, time.monotonic(), sticky=True)
+            return {"ok": True}
         if cmd in ("goto", "init") and self.lease is not None:
             return {"ok": False, "error": f"control lease held by '{self.lease['name']}' - release it first"}
         # Latched errors must be acknowledged: only 'recover' leads back to MOVE (Franka: automaticErrorRecovery).
@@ -463,13 +720,19 @@ class Daemon:
         if cmd in ("move", "torque_on"):
             if self.mode is ArmMode.STOPPED:
                 return {"ok": False, "error": "STOPPED: run 'recover' (after the cause is cleared) or 'idle'"}
-            self._enter_move(); return {"ok": True, "mode": self.mode.value}
+            if self.mode is not ArmMode.MOVE:
+                self._enter_move()
+            return {"ok": True, "mode": self.mode.value, "entering_range": self.entry_target is not None}
         if cmd in ("idle", "torque_off", "guiding"):
             self._set_torque(False)
             self.mode = ArmMode.GUIDING if cmd == "guiding" else ArmMode.IDLE
+            self.entry_target = None
             self._revoke(cmd); self.stream.clear()
+            self._restore_entry_speed()
             return {"ok": True, "mode": self.mode.value}
         if cmd == "recover":
+            if self.entry_speed_previous:
+                return {"ok": False, "error": "MOVE entry failed: support the arm and use idle before retrying"}
             if self.mode not in (ArmMode.REFLEX, ArmMode.STOPPED):
                 return {"ok": False, "error": f"not in REFLEX/STOPPED (mode {self.mode.value})"}
             hot = {i: t for i, t in self.temps.items() if t >= self.reflex._cfg.temp_warn}
@@ -485,6 +748,8 @@ class Daemon:
             self.stream.clear(); self.soft = True; self.mode = ArmMode.MOVE
             return {"ok": True, "mode": "move"}
         if cmd == "goto":
+            if self.entry_target is not None:
+                return {"ok": False, "error": "MOVE entry is still bringing joints within limits"}
             target = msg.get("action") or {}
             unknown = set(target) - {j.name for j in self.joints}
             if unknown:
@@ -511,9 +776,11 @@ class Daemon:
             self.stream.push(clamped, time.monotonic(), sticky=True)
             return {"ok": True, "accepted": clamped, "clamped": notes, "note": "accepted, not yet reached - watch state"}
         if cmd == "init":
+            if self.entry_target is not None:
+                return {"ok": False, "error": "MOVE entry is still bringing joints within limits"}
             if self.mode is ArmMode.STOPPED:
                 return {"ok": False, "error": "STOPPED"}
-            self._enter_move()
+            self._enter_move(adjust_to_limits=False)
             try:
                 report = self_test(self.bus, self.joints, self.limits, self.joint_limits)
             except RuntimeError as e:
@@ -541,9 +808,21 @@ class Daemon:
         joints = {}
         for j in self.joints:
             ref = j.reference_id if isinstance(j, DualMotorJoint) else j.motor_ids[0]
-            joints[j.name] = {"pos": self.present.get(j.name), "goal": self.goal.get(j.name), "load": self.load.get(ref)}
+            bounds = self._bounds(j)
+            turn_offset = 0
+            if isinstance(j, ContinuousJoint) and j.home is not None and j.home_abs is not None:
+                turn_offset = j.home - j.home_abs
+            applied = self.goal.get(j.name)
+            hold = (self.stream.hold_target(j.name)
+                    if self.mode is ArmMode.MOVE and self.entry_target is None else None)
+            joints[j.name] = {
+                "pos": self.present.get(j.name), "goal": applied,
+                "nominal_goal": applied if hold is None else hold, "load": self.load.get(ref),
+                "bounds": bounds, "turn_offset": turn_offset,
+                "hotfix_ticks": self.hotfix_ticks.get(j.name, 0),
+            }
         return {
-            "t": time.time(), "mode": self.mode.value, "reflex": self.reflex.mode.value, "stale": self.stream.stale,
+            "t": time.time(), "comm_ok": self.comm_ok, "mode": self.mode.value, "reflex": self.reflex.mode.value, "stale": self.stream.stale, "entering_range": self.entry_target is not None,
             "lease": self.lease["name"] if self.lease else None,
             "joints": joints, "motors": {str(i): {"pos": self.rp.get(i), "load": self.load.get(i), "temp": self.temps.get(i)} for i in self.ids},
             "ext_torque": {n: round(v, 3) for n, v in self.ext.items()},

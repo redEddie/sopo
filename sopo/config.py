@@ -68,7 +68,7 @@ def make_joints(cfg: dict) -> list[Joint]:
 
 
 def make_joint_limits(cfg: dict, joints: list[Joint]) -> dict[str, tuple[int, int]]:
-    """모터 ID 기준 position_limits → 관절 이름 기준. continuous는 자체 range_ticks를 쓰므로 제외."""
+    """Joint tick bounds, including both motors of a mirrored joint."""
     s = cfg.get("safety", {})
     motor_limits = {int(k): tuple(v) for k, v in (s.get("position_limits") or {}).items()}
     defaults = (s.get("min_position", 200), s.get("max_position", 3896))
@@ -77,7 +77,14 @@ def make_joint_limits(cfg: dict, joints: list[Joint]) -> dict[str, tuple[int, in
         if isinstance(j, ContinuousJoint):
             continue
         ref = j.reference_id if isinstance(j, DualMotorJoint) else j.motor_ids[0]
-        out[j.name] = motor_limits.get(ref, defaults)
+        lo, hi = motor_limits.get(ref, defaults)
+        if isinstance(j, DualMotorJoint):
+            mirror_lo, mirror_hi = motor_limits.get(j.mirror_id, defaults)
+            offset = j.K - j.preload_ticks
+            lo, hi = max(lo, offset - mirror_hi), min(hi, offset - mirror_lo)
+        if lo >= hi:
+            raise ValueError(f"{j.name}: motor position limits do not overlap")
+        out[j.name] = (lo, hi)
     return out
 
 

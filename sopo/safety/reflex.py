@@ -24,7 +24,6 @@ class Mode(Enum):
 
 class Event(Enum):
     COLLISION = "collision"
-    TRACKING_ERROR = "tracking_error"
     PAIR_MISMATCH = "pair_mismatch"
     COMM_LOSS = "comm_loss"
     OVERTEMP = "overtemp"
@@ -39,8 +38,6 @@ class ReflexConfig:
     progress_ticks: int = 40  # 포화 창(t_collision) 동안 이만큼 못 나아가면 막힌 것
     accel_step: int = 40
     t_accel: float = 0.2
-    err_ticks: int = 150
-    t_error: float = 0.5
     pair_tol: int = 60   # measured: free +-6, both motors saturated by a grab up to +21; a real fight is hundreds
     t_pair: float = 0.3  # must persist (gear deflection under load is transient)
     comm_fail_max: int = 5
@@ -72,7 +69,6 @@ class _MotorState:
         self.sat_start: float | None = None
         self.pos_at_sat: int | None = None
         self.dir_at_sat: int = 0  # 포화 시작 시 목표 방향 (+1/-1)
-        self.err_start: float | None = None
         self.accel_until: float = 0.0
         self.last_goal: int | None = None
         self.limit_armed: bool = False   # 범위 안에 한 번 들어온 뒤에만 리밋 감시
@@ -205,7 +201,6 @@ class Reflex:
 
             state = self._motor_states[motor_id]
             cap = self._limits.torque_for(motor_id)
-            err = abs(tgt - pos)
             load_val = load.get(motor_id, 0)
             self._last_load[motor_id] = load_val
             load_abs = abs(load_val)
@@ -248,20 +243,6 @@ class Reflex:
                 else:
                     state.sat_start = None
                     state.pos_at_sat = None
-
-            # TRACKING_ERROR detection.
-            if err > self._cfg.err_ticks:
-                if state.err_start is None:
-                    state.err_start = now
-                elif now - state.err_start >= self._cfg.t_error:
-                    trip = Trip(
-                        Event.TRACKING_ERROR,
-                        motor_id,
-                        f"error {err} ticks for {now - state.err_start:.3f}s",
-                    )
-                    new_trips.extend(self._emit(trip))
-            else:
-                state.err_start = None
 
         # JOINT_LIMIT: 명령은 이미 클램프되므로 여기 걸리는 건 외력으로 밀렸거나 캡 부족으로 처진 경우.
         # 토크 OFF 중 기계 끝에 놓인 채 시작하는 일이 흔하므로, 범위 안에 한 번 들어온 뒤(armed)에만,
@@ -391,7 +372,6 @@ class Reflex:
         for state in self._motor_states.values():
             state.sat_start = None
             state.pos_at_sat = None
-            state.err_start = None
             state.limit_start = None
         self._pair_start.clear()
         self._ext_start.clear()
